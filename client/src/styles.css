@@ -210,13 +210,18 @@ footer { font-size: 11px; }
 /* ---- Station card: neighbourhood line ------------------------------- */
 .place { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
 
-/* ---- Floating dice button ------------------------------------------------- */
-.dice-button {
+/* ---- Floating "Take me somewhere" picker -------------------------------- */
+.random-picker {
   position: absolute;
   left: 50%;
   bottom: 28px;
   transform: translateX(-50%);
   z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.dice-button {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -232,8 +237,9 @@ footer { font-size: 11px; }
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.dice-button:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); }
-.dice-button:active { transform: translateX(-50%) translateY(1px); }
+.dice-button:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); }
+.dice-button:active { transform: translateY(1px); }
+.dice-button.open { box-shadow: 0 0 0 3px rgba(255, 214, 0, 0.35), 0 8px 28px rgba(0, 0, 0, 0.5); }
 .dice-button:disabled { opacity: 0.5; cursor: wait; }
 
 .die { width: 28px; height: 28px; flex: none; }
@@ -247,13 +253,64 @@ footer { font-size: 11px; }
   100% { transform: rotate(360deg) scale(1); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dice-button.rolling .die { animation: none; }
+/* The choice card, floating just above the button */
+.picker-card {
+  width: 280px;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  animation: picker-in 0.14s ease-out;
+}
+.picker-title { margin: 4px 8px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.picker-option {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.picker-option:hover:not(:disabled), .picker-option:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.picker-option:disabled { opacity: 0.4; cursor: not-allowed; }
+.picker-option strong { display: block; font-size: 14px; }
+.picker-option .muted { display: block; margin: 2px 0 0; font-size: 12px; }
+.picker-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #000;
+}
+.picker-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+
+@keyframes picker-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
-/* On phones the panel is a bottom sheet, so float the button at the top instead (under the layer toggles). */
+@media (prefers-reduced-motion: reduce) {
+  .dice-button.rolling .die, .picker-card { animation: none; }
+}
+
+/* On phones the panel is a bottom sheet, so float the picker at the top instead
+   (under the layer toggles), with the card opening downward. */
 @media (max-width: 600px) {
-  .dice-button { top: 64px; bottom: auto; }
+  .random-picker { top: 64px; bottom: auto; flex-direction: column-reverse; }
+  .picker-card { margin: 10px 0 0; }
 }
 
 /* ---- Layer toggles (Transit / Neighborhoods) ------------------------------ */

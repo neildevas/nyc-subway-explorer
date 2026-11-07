@@ -5,7 +5,7 @@ import { fetchArrivals, fetchAreas, fetchRealtime, fetchStatic } from "./api";
 import { loadVisited, pickRandom, saveVisited } from "./random";
 import { setAmbientFocus, startAmbientTrains } from "./ambient";
 import { Bullet, routeSort } from "./Bullet";
-import { DiceButton } from "./DiceButton";
+import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { AreaSearch } from "./AreaSearch";
@@ -77,7 +77,8 @@ export default function App() {
   const [selected, setSelected] = useState<Station | null>(null);
   const [arrivals, setArrivals] = useState<Arrival[] | null>(null);
   const [lineFilter, setLineFilter] = useState<string>("");
-  const [visited, setVisited] = useState<string[]>(loadVisited);
+  const [visited, setVisited] = useState<string[]>(() => loadVisited("stop"));
+  const [visitedAreas, setVisitedAreas] = useState<string[]>(() => loadVisited("neighborhood"));
   const [showTrains, setShowTrains] = useState(true);
   const [trainCount, setTrainCount] = useState(0);
   const [trainsByRoute, setTrainsByRoute] = useState<Record<string, number>>({});
@@ -349,17 +350,32 @@ export default function App() {
     return () => { cancelled = true; clearInterval(id); };
   }, [selected]);
 
-  // ---- Random roll: any stop, preferring ones not rolled before -------------
-  const roll = () => {
+  // ---- "Take me somewhere": a random stop or neighbourhood, preferring new ones
+  const rollStop = () => {
     if (!stations) return;
     setShowTransit(true); // the roll lands on a stop, so make sure stops are showing
     const pick = pickRandom(stations.features as Station[], visited);
     if (!pick) return;
     const next = [...visited.filter((v) => v !== pick.properties.id), pick.properties.id];
     setVisited(next);
-    saveVisited(next);
+    saveVisited(next, "stop");
+    setSelectedAreaId(null); // so the panel opens on the stop, not a neighbourhood from earlier
     selectStation(pick.properties.id, [], false);
   };
+  const rollNeighborhood = () => {
+    if (!areas) return;
+    const pool = (areas.features as Area[]).filter((a) => a.properties.kind === "neighborhood");
+    const pick = pickRandom(pool, visitedAreas);
+    if (!pick) return;
+    const next = [...visitedAreas.filter((v) => v !== pick.properties.id), pick.properties.id];
+    setVisitedAreas(next);
+    saveVisited(next, "neighborhood");
+    setSelected(null); // so the panel opens on the neighbourhood, not a stop from earlier
+    selectArea(pick.properties.id, false);
+  };
+
+  const takeMeSomewhere = (kind: RandomKind) => (kind === "stop" ? rollStop() : rollNeighborhood());
+
 
   const routeList = useMemo(
     () => Object.values(routes).filter((r) => stations?.features.some((s) => s.properties.routes.includes(r.id))),
@@ -524,7 +540,7 @@ export default function App() {
         onAreas={setShowAreas}
       />
 
-      <DiceButton onRoll={roll} disabled={!stations} />
+      <RandomPicker onPick={takeMeSomewhere} disabled={!stations} unavailable={areas ? [] : ["neighborhood"]} />
 
       {error && <div className="error">{error}</div>}
     </div>
