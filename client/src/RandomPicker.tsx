@@ -2,6 +2,20 @@ import { useEffect, useRef, useState } from "react";
 
 export type RandomKind = "stop" | "neighborhood";
 
+const BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
+const BOROUGHS_KEY = "standclear.randomBoroughs";
+
+const loadBoroughs = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(BOROUGHS_KEY) ?? "[]"); } catch { return []; }
+};
+
+/** "in Brooklyn", "in Brooklyn or Queens", "in Manhattan, Brooklyn or Queens" */
+function inBoroughs(list: string[]) {
+  if (!list.length) return "";
+  const ordered = BOROUGHS.filter((b) => list.includes(b));
+  return ` in ${ordered.length === 1 ? ordered[0] : `${ordered.slice(0, -1).join(", ")} or ${ordered[ordered.length - 1]}`}`;
+}
+
 /** Pip positions for each die face, on a 3×3 grid (0–8, row by row). */
 const FACES: Record<number, number[]> = {
   1: [4],
@@ -12,10 +26,23 @@ const FACES: Record<number, number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
+/**
+ * One MTA line colour per face, chosen so white pips stand out
+ * (the N/Q/R/W yellow and L grey are left out for that reason).
+ */
+const FACE_COLORS: Record<number, string> = {
+  1: "#EE352E", // 1 2 3
+  2: "#FF6319", // B D F M
+  3: "#6CBE45", // G
+  4: "#00933C", // 4 5 6
+  5: "#0039A6", // A C E
+  6: "#B933AD", // 7
+};
+
 function Die({ face }: { face: number }) {
   return (
     <svg className="die" viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="1.5" y="1.5" width="21" height="21" rx="5" />
+      <rect x="1.5" y="1.5" width="21" height="21" rx="5" style={{ fill: FACE_COLORS[face] }} />
       {FACES[face].map((p) => (
         <circle key={p} cx={6 + (p % 3) * 6} cy={6 + Math.floor(p / 3) * 6} r="1.9" />
       ))}
@@ -50,15 +77,25 @@ const OPTIONS: { kind: RandomKind; title: string; detail: string; icon: JSX.Elem
 
 /**
  * Floating "Take me somewhere" dice button. Opens a small card to choose a random
- * stop or a random neighbourhood; choosing tumbles the die, then calls onPick.
+ * stop or a random neighbourhood, optionally limited to some boroughs; choosing
+ * tumbles the die, then calls onPick.
  */
-export function RandomPicker({ onPick, disabled, unavailable = [] }: {
-  onPick: (kind: RandomKind) => void;
+export function RandomPicker({ onPick, disabled, unavailable = [], boroughsAvailable = true }: {
+  /** `boroughs` is empty for "anywhere" */
+  onPick: (kind: RandomKind, boroughs: string[]) => void;
   disabled?: boolean;
   /** Options to grey out (e.g. neighbourhoods when that data wasn't built) */
   unavailable?: RandomKind[];
+  /** False when stations have no borough data, so the borough chips are hidden */
+  boroughsAvailable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [boroughs, setBoroughs] = useState<string[]>(loadBoroughs);
+  useEffect(() => {
+    try { localStorage.setItem(BOROUGHS_KEY, JSON.stringify(boroughs)); } catch { /* storage unavailable */ }
+  }, [boroughs]);
+  const toggleBorough = (b: string) => setBoroughs((list) => (list.includes(b) ? list.filter((x) => x !== b) : [...list, b]));
+  const chosen = boroughsAvailable ? boroughs : [];
   const [face, setFace] = useState(5);
   const [rolling, setRolling] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -90,7 +127,7 @@ export function RandomPicker({ onPick, disabled, unavailable = [] }: {
       if (++flips >= 5) {
         clearInterval(id);
         setRolling(false);
-        onPick(kind);
+        onPick(kind, chosen);
       }
     }, 90);
   };
@@ -100,6 +137,21 @@ export function RandomPicker({ onPick, disabled, unavailable = [] }: {
       {open && (
         <div className="picker-card" role="menu" aria-label="Take me somewhere">
           <p className="picker-title">Take me to…</p>
+          {boroughsAvailable && (
+            <div className="picker-boroughs" role="group" aria-label="Boroughs">
+              {BOROUGHS.map((b) => (
+                <button
+                  key={b}
+                  className={`chip${boroughs.includes(b) ? " on" : ""}`}
+                  aria-pressed={boroughs.includes(b)}
+                  onClick={() => toggleBorough(b)}
+                >
+                  {b}
+                </button>
+              ))}
+              <span className="picker-scope">{chosen.length ? "" : "Anywhere in the city"}</span>
+            </div>
+          )}
           {OPTIONS.map((o) => (
             <button
               key={o.kind}
@@ -111,7 +163,7 @@ export function RandomPicker({ onPick, disabled, unavailable = [] }: {
               <span className="picker-icon">{o.icon}</span>
               <span>
                 <strong>{o.title}</strong>
-                <span className="muted">{unavailable.includes(o.kind) ? "Not available yet" : o.detail}</span>
+                <span className="muted">{unavailable.includes(o.kind) ? "Not available yet" : o.detail + inBoroughs(chosen)}</span>
               </span>
             </button>
           ))}

@@ -9,7 +9,7 @@ import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { AreaSearch } from "./AreaSearch";
-import { addAreaLayers, areaBounds, setAreasVisible, setSelectedArea } from "./areas";
+import { addAreaLayers, areaBounds, boroughBounds, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
 import type { AreaProps, Areas, Arrival, Lines, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
@@ -45,11 +45,17 @@ const TRANSIT_LAYERS = ["lines", "lines-hit", "stations", "station-labels", "tra
  * (The key is versioned: bumping it resets everyone to the current defaults.)
  */
 const LAYERS_KEY = "standclear.layers.v2";
-const DEFAULT_LAYERS = { transit: true, areas: true };
-const loadLayerPrefs = (): { transit: boolean; areas: boolean } => {
+const DEFAULT_LAYERS = { transit: true, areas: true, boroughs: false };
+const loadLayerPrefs = (): { transit: boolean; areas: boolean; boroughs: boolean } => {
   try { return { ...DEFAULT_LAYERS, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}") }; }
   catch { return DEFAULT_LAYERS; }
 };
+
+const BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
+
+/** Camera speed for flying to a stop or a neighbourhood (Mapbox flyTo `speed`; lower is slower). */
+const STOP_FLY_SPEED = 0.9;
+const HIGHLIGHT_KEY = "standclear.highlightBoroughs";
 
 /** Map padding that keeps framed things clear of the side panel (or the bottom sheet on phones). */
 const panelPadding = () =>
@@ -88,18 +94,46 @@ export default function App() {
   // Map layers: Transit and Neighborhoods, toggled independently.
   const [showTransit, setShowTransit] = useState(() => loadLayerPrefs().transit);
   const [showAreas, setShowAreas] = useState(() => loadLayerPrefs().areas);
+  const [showBoroughs, setShowBoroughs] = useState(() => loadLayerPrefs().boroughs);
   const [areas, setAreas] = useState<Areas | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   /** Hovered neighbourhood, plus the sub-neighbourhood under the cursor if any (e.g. "Yorkville") */
   const [areaHover, setAreaHover] = useState<{ id: string; sub?: string; x: number; y: number } | null>(null);
   useEffect(() => {
-    try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas })); } catch { /* storage unavailable */ }
-  }, [showTransit, showAreas]);
+    try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas, boroughs: showBoroughs })); } catch { /* storage unavailable */ }
+  }, [showTransit, showAreas, showBoroughs]);
+
+  // Boroughs whose neighbourhoods are highlighted on the map (none = no highlight).
+  const [highlightBoroughs, setHighlightBoroughs] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(HIGHLIGHT_KEY) ?? "[]"); } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(HIGHLIGHT_KEY, JSON.stringify(highlightBoroughs)); } catch { /* storage unavailable */ }
+  }, [highlightBoroughs]);
+  /** Set when the user changes the chips, so the map frames them (but not on page load). */
+  const frameBoroughs = useRef(false);
+  const toggleHighlight = (b: string) => {
+    frameBoroughs.current = true;
+    setHighlightBoroughs((list) => (list.includes(b) ? list.filter((x) => x !== b) : [...list, b]));
+  };
 
   const areasById = useMemo(
     () => new Map((areas?.features ?? []).map((f) => [f.properties.id, f as Area])),
     [areas],
   );
+
+  // Boroughs layer: hover card, and click to toggle that borough's highlight (same as the chips).
+  const [boroughHover, setBoroughHoverCard] = useState<{ name: string; x: number; y: number } | null>(null);
+  const boroughStats = useMemo(() => {
+    const stats: Record<string, { neighborhoods: number; stops: number }> = {};
+    for (const b of BOROUGHS) stats[b] = { neighborhoods: 0, stops: 0 };
+    for (const f of areas?.features ?? []) if (f.properties.kind === "neighborhood" && stats[f.properties.borough]) stats[f.properties.borough].neighborhoods++;
+    for (const f of stations?.features ?? []) if (f.properties.borough && stats[f.properties.borough]) stats[f.properties.borough].stops++;
+    return stats;
+  }, [areas, stations]);
+
+  const toggleHighlightRef = useRef(toggleHighlight);
+  toggleHighlightRef.current = toggleHighlight;
   const selectedArea = selectedAreaId ? areasById.get(selectedAreaId) ?? null : null;
 
   /** Select a neighbourhood (or deselect it if it's already selected). */
@@ -231,6 +265,32 @@ export default function App() {
       if (id) selectAreaRef.current(id);
     });
 
+    // ---- Borough hover + click (Boroughs layer) ------------------------------
+    // When Neighborhoods is also on, it sits on top and gets the hovers and clicks.
+    const neighborhoodsShowing = () => m.getLayer("areas-fill") && m.getLayoutProperty("areas-fill", "visibility") === "visible";
+    let hoveredBorough: string | null = null;
+    const clearBoroughHover = () => {
+      if (hoveredBorough) setBoroughHover(m, null);
+      hoveredBorough = null;
+      setBoroughHoverCard(null);
+    };
+    m.on("mousemove", "boroughs-fill", (e) => {
+      const borough = e.features?.[0]?.properties?.borough as string | undefined;
+      if (!borough || overTransit(e.point) || neighborhoodsShowing()) { clearBoroughHover(); return; }
+      if (borough !== hoveredBorough) { setBoroughHover(m, borough); hoveredBorough = borough; }
+      m.getCanvas().style.cursor = "pointer";
+      setBoroughHoverCard({ name: borough, x: e.point.x, y: e.point.y });
+    });
+    m.on("mouseleave", "boroughs-fill", () => {
+      clearBoroughHover();
+      m.getCanvas().style.cursor = "";
+    });
+    m.on("click", "boroughs-fill", (e) => {
+      if (overTransit(e.point) || neighborhoodsShowing()) return;
+      const borough = e.features?.[0]?.properties?.borough as string | undefined;
+      if (borough) toggleHighlightRef.current(borough);
+    });
+
     m.on("click", "stations", (e) => {
       const id = e.features?.[0]?.properties?.id as string | undefined;
       if (!id) return;
@@ -306,9 +366,21 @@ export default function App() {
   useEffect(() => {
     const m = map.current;
     if (!m || !areas) return;
-    setAreasVisible(m, showAreas);
+    setAreasVisible(m, showAreas, showBoroughs);
     if (!showAreas) { setSelectedAreaId(null); setAreaHover(null); }
-  }, [showAreas, areas]);
+    if (!showBoroughs || showAreas) setBoroughHoverCard(null);
+  }, [showAreas, showBoroughs, areas]);
+
+  // Borough highlight: brighten those boroughs' neighbourhoods and, after a change, frame them.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !areas) return;
+    setBoroughHighlight(m, highlightBoroughs);
+    if (!frameBoroughs.current) return;
+    frameBoroughs.current = false;
+    const bounds = highlightBoroughs.length ? boroughBounds(areas, highlightBoroughs) : null;
+    if (bounds) m.fitBounds(bounds, { padding: panelPadding(), maxZoom: 13, duration: 800 });
+  }, [highlightBoroughs, areas]);
 
   // Highlight the selected neighbourhood and frame it on the map.
   useEffect(() => {
@@ -316,7 +388,10 @@ export default function App() {
     if (!m || !areas) return;
     setSelectedArea(m, selectedAreaId);
     const area = selectedAreaId ? areasById.get(selectedAreaId) : null;
-    if (area) m.fitBounds(areaBounds(area.geometry.coordinates), { padding: panelPadding(), maxZoom: 15, duration: 800 });
+    if (!area) return;
+    // Same camera move as selecting a stop (flyTo at speed 0.9), framed to fit the whole neighbourhood.
+    const camera = m.cameraForBounds(areaBounds(area.geometry.coordinates), { padding: panelPadding(), maxZoom: 15 });
+    if (camera) m.flyTo({ ...camera, speed: STOP_FLY_SPEED, essential: true });
   }, [selectedAreaId, areas, areasById]);
 
   // ---- Focus: the hovered (or picked) route stays bright and raised; the rest dim
@@ -340,7 +415,7 @@ export default function App() {
       features: selected ? [selected] : [],
     });
     if (!selected) return;
-    m?.flyTo({ center: selected.geometry.coordinates as [number, number], zoom: 14.5, speed: 0.9, essential: true });
+    m?.flyTo({ center: selected.geometry.coordinates as [number, number], zoom: 14.5, speed: STOP_FLY_SPEED, essential: true });
 
     let cancelled = false;
     setArrivals(null);
@@ -351,10 +426,14 @@ export default function App() {
   }, [selected]);
 
   // ---- "Take me somewhere": a random stop or neighbourhood, preferring new ones
-  const rollStop = () => {
+  // `boroughs` limits where we can land; empty means anywhere.
+  const inBoroughs = (borough: string | undefined, boroughs: string[]) => !boroughs.length || boroughs.includes(borough ?? "");
+
+  const rollStop = (boroughs: string[]) => {
     if (!stations) return;
     setShowTransit(true); // the roll lands on a stop, so make sure stops are showing
-    const pick = pickRandom(stations.features as Station[], visited);
+    const pool = (stations.features as Station[]).filter((s) => inBoroughs(s.properties.borough, boroughs));
+    const pick = pickRandom(pool, visited);
     if (!pick) return;
     const next = [...visited.filter((v) => v !== pick.properties.id), pick.properties.id];
     setVisited(next);
@@ -362,9 +441,9 @@ export default function App() {
     setSelectedAreaId(null); // so the panel opens on the stop, not a neighbourhood from earlier
     selectStation(pick.properties.id, [], false);
   };
-  const rollNeighborhood = () => {
+  const rollNeighborhood = (boroughs: string[]) => {
     if (!areas) return;
-    const pool = (areas.features as Area[]).filter((a) => a.properties.kind === "neighborhood");
+    const pool = (areas.features as Area[]).filter((a) => a.properties.kind === "neighborhood" && inBoroughs(a.properties.borough, boroughs));
     const pick = pickRandom(pool, visitedAreas);
     if (!pick) return;
     const next = [...visitedAreas.filter((v) => v !== pick.properties.id), pick.properties.id];
@@ -374,7 +453,10 @@ export default function App() {
     selectArea(pick.properties.id, false);
   };
 
-  const takeMeSomewhere = (kind: RandomKind) => (kind === "stop" ? rollStop() : rollNeighborhood());
+  const takeMeSomewhere = (kind: RandomKind, boroughs: string[]) =>
+    kind === "stop" ? rollStop(boroughs) : rollNeighborhood(boroughs);
+  // Borough chips only make sense once stations carry borough data (from the neighbourhood build).
+  const hasBoroughs = !!stations?.features.some((s) => s.properties.borough);
 
 
   const routeList = useMemo(
@@ -393,6 +475,29 @@ export default function App() {
         </header>
 
         {areas && <AreaSearch areas={areas.features as Area[]} onSelect={(id) => selectArea(id, false)} />}
+
+        {areas && (showAreas || showBoroughs) && (
+          <div className="borough-highlight">
+            <div className="borough-highlight-head">
+              <span className="filter-label">Highlight boroughs</span>
+              {highlightBoroughs.length > 0 && (
+                <button className="text-button" onClick={() => setHighlightBoroughs([])}>Clear</button>
+              )}
+            </div>
+            <div className="chips" role="group" aria-label="Highlight boroughs">
+              {BOROUGHS.map((b) => (
+                <button
+                  key={b}
+                  className={`chip${highlightBoroughs.includes(b) ? " on" : ""}`}
+                  aria-pressed={highlightBoroughs.includes(b)}
+                  onClick={() => toggleHighlight(b)}
+                >
+                  {b}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {showTransit && (
         <>
@@ -515,6 +620,22 @@ export default function App() {
         />
       )}
 
+      {boroughHover && !hover && boroughStats[boroughHover.name] && (() => {
+        const st = boroughStats[boroughHover.name];
+        const flip = boroughHover.x > window.innerWidth - 300;
+        return (
+          <div className={`line-card area-hover${flip ? " flip" : ""}`} style={{ left: boroughHover.x, top: boroughHover.y }}>
+            <div>
+              <strong>{boroughHover.name}</strong>
+              <span>
+                {st.neighborhoods} neighborhoods · {st.stops} stops ·{" "}
+                {highlightBoroughs.includes(boroughHover.name) ? "Click to remove highlight" : "Click to highlight"}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {areaHover && !hover && areasById.get(areaHover.id) && (() => {
         const a = areasById.get(areaHover.id)!.properties;
         const flip = areaHover.x > window.innerWidth - 300;
@@ -535,12 +656,19 @@ export default function App() {
       <LayerToggles
         transit={showTransit}
         areas={showAreas}
+        boroughs={showBoroughs}
         areasAvailable={!!areas}
         onTransit={setShowTransit}
         onAreas={setShowAreas}
+        onBoroughs={setShowBoroughs}
       />
 
-      <RandomPicker onPick={takeMeSomewhere} disabled={!stations} unavailable={areas ? [] : ["neighborhood"]} />
+      <RandomPicker
+        onPick={takeMeSomewhere}
+        disabled={!stations}
+        unavailable={areas ? [] : ["neighborhood"]}
+        boroughsAvailable={hasBoroughs}
+      />
 
       {error && <div className="error">{error}</div>}
     </div>

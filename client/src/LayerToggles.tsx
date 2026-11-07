@@ -1,12 +1,15 @@
-/** Floating map-layer switches: Transit and Neighborhoods, each on/off independently. */
-export function LayerToggles({ transit, areas, areasAvailable, onTransit, onAreas }: {
+/** Floating map-layer switches: Transit, Neighborhoods and Boroughs, each on/off independently. */
+export function LayerToggles({ transit, areas, boroughs, areasAvailable, onTransit, onAreas, onBoroughs }: {
   transit: boolean;
   areas: boolean;
-  /** False when neighbourhood data wasn't built, so the button can explain why it's off */
+  boroughs: boolean;
+  /** False when neighbourhood data wasn't built, so those buttons can explain why they're off */
   areasAvailable: boolean;
   onTransit: (on: boolean) => void;
   onAreas: (on: boolean) => void;
+  onBoroughs: (on: boolean) => void;
 }) {
+  const needsData = "Run npm run build:data to add neighborhoods";
   return (
     <div className="layer-toggles" role="group" aria-label="Map layers">
       <button className={transit ? "on" : ""} aria-pressed={transit} onClick={() => onTransit(!transit)} title={transit ? "Hide transit" : "Show transit"}>
@@ -23,13 +26,25 @@ export function LayerToggles({ transit, areas, areasAvailable, onTransit, onArea
         aria-pressed={areas}
         onClick={() => onAreas(!areas)}
         disabled={!areasAvailable}
-        title={areasAvailable ? (areas ? "Hide neighborhoods" : "Show neighborhoods") : "Run npm run build:data to add neighborhoods"}
+        title={areasAvailable ? (areas ? "Hide neighborhoods" : "Show neighborhoods") : needsData}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 7l5-3 6 3 5-3v13l-5 3-6-3-5 3z" />
           <path d="M9 4v13M15 7v13" />
         </svg>
         Neighborhoods
+      </button>
+      <button
+        className={boroughs ? "on" : ""}
+        aria-pressed={boroughs}
+        onClick={() => onBoroughs(!boroughs)}
+        disabled={!areasAvailable}
+        title={areasAvailable ? (boroughs ? "Hide boroughs" : "Show boroughs") : needsData}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z" />
+        </svg>
+        Boroughs
       </button>
     </div>
   );

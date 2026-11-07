@@ -62,7 +62,7 @@ const FADE_S = 0.8;
 
 export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientOptions): () => void {
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return () => {};
-  const { count = 7, pxPerSec = 11, dwellS = [0.4, 0.9], laneSpacing } = opts;
+  const { count = 15, pxPerSec = 11, dwellS = [0.4, 0.9], laneSpacing } = opts;
 
   // ---- Index segments by route + station so trains can follow a route ----
   const segments: Segment[] = [];
