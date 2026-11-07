@@ -1,0 +1,80 @@
+import type { FeatureCollection, LineString, MultiPolygon, Point } from "geojson";
+
+export interface StationProps {
+  id: string;
+  name: string;
+  routes: string[];
+  /** Every route in the station's complex, including transfers (Times Sq: 1 2 3 7 N Q R W S) */
+  allRoutes?: string[];
+  /** Every station id in the complex, itself included */
+  complexIds?: string[];
+  /** e.g. "Brooklyn" (empty if neighbourhood data wasn't available at build time) */
+  borough?: string;
+  /** Neighbourhood name, e.g. "Upper East Side" */
+  neighborhood?: string;
+  /** Neighbourhood id, matching an id in neighborhoods.geojson */
+  areaId?: string;
+  /** Smaller named area inside the neighbourhood, e.g. "Yorkville" (often empty) */
+  subNeighborhood?: string;
+  colors: string[];
+}
+export type Stations = FeatureCollection<Point, StationProps>;
+/** One route's station-to-station segment. `routes` is comma-wrapped (",B,"); `slot` is the side-by-side position. */
+export type Lines = FeatureCollection<LineString, { key: string; routeId: string; color: string; routes: string; slot: number }>;
+
+export interface RouteInfo {
+  id: string;
+  name: string;
+  longName: string;
+  color: string;
+  textColor: string;
+  /** Main line stops in order (north → south, or west → east) */
+  stops?: string[];
+  /** Branches off the main line, e.g. the A's Lefferts Blvd branch */
+  branches?: { from: string | null; stops: string[] }[];
+}
+export type Routes = Record<string, RouteInfo>;
+
+export interface Train {
+  tripId: string;
+  routeId: string;
+  direction: "N" | "S" | null;
+  stopId: string | null;
+  status: "STOPPED_AT" | "INCOMING_AT" | "IN_TRANSIT_TO" | null;
+  timestamp: number | null;
+}
+
+export interface Arrival {
+  tripId: string;
+  routeId: string;
+  stopId: string;
+  direction: "N" | "S";
+  time: number;
+}
+
+/**
+ * A neighbourhood, or a sub-neighbourhood inside one, from NYC Neighborhood
+ * Boundaries (Chris Whong, CC BY-SA 4.0).
+ */
+export interface AreaProps {
+  id: string;
+  name: string;
+  borough: string;
+  /** "neighborhood" (Upper East Side) or "sub" (Yorkville, inside it) */
+  kind: "neighborhood" | "sub";
+  /** 0–4: map colour, chosen in the source data so neighbours never match */
+  color: number;
+  summary: string;
+  wikipedia: string;
+  /** e.g. ["UES"] */
+  alternateNames: string[];
+  /** Sub-neighbourhood names inside a neighbourhood */
+  includes: string[];
+  /** For a sub-neighbourhood, the id of the neighbourhood it's in */
+  parent: string;
+  /** Station ids inside the neighbourhood */
+  stations: string[];
+  /** Lines that stop inside it */
+  routes: string[];
+}
+export type Areas = FeatureCollection<MultiPolygon, AreaProps>;

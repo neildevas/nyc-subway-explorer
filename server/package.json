@@ -1,0 +1,24 @@
+{
+  "name": "nyc-subway-explorer-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:data": "tsx scripts/build-static.ts",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "express": "^4.21.2",
+    "gtfs-realtime-bindings": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/express": "^4.17.21",
+    "@types/geojson": "^7946.0.14",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
