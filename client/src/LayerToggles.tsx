@@ -1,13 +1,17 @@
-/** Floating map-layer switches: Transit, Neighborhoods and Boroughs, each on/off independently. */
-export function LayerToggles({ transit, areas, boroughs, areasAvailable, onTransit, onAreas, onBoroughs }: {
+/** Floating map-layer switches: Transit, Neighborhoods, Boroughs and Parks, each on/off independently. */
+export function LayerToggles({ transit, areas, boroughs, parks, areasAvailable, parksAvailable, onTransit, onAreas, onBoroughs, onParks }: {
   transit: boolean;
   areas: boolean;
   boroughs: boolean;
+  parks: boolean;
   /** False when neighbourhood data wasn't built, so those buttons can explain why they're off */
   areasAvailable: boolean;
+  /** False when parks data wasn't built */
+  parksAvailable: boolean;
   onTransit: (on: boolean) => void;
   onAreas: (on: boolean) => void;
   onBoroughs: (on: boolean) => void;
+  onParks: (on: boolean) => void;
 }) {
   const needsData = "Run npm run build:data to add neighborhoods";
   return (
@@ -45,6 +49,19 @@ export function LayerToggles({ transit, areas, boroughs, areasAvailable, onTrans
           <path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z" />
         </svg>
         Boroughs
+      </button>
+      <button
+        className={parks ? "on" : ""}
+        aria-pressed={parks}
+        onClick={() => onParks(!parks)}
+        disabled={!parksAvailable}
+        title={parksAvailable ? (parks ? "Hide parks" : "Show parks") : "Run npm run build:data to add parks"}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3l5 7h-3l4 6H6l4-6H7z" />
+          <path d="M12 16v5" />
+        </svg>
+        Parks
       </button>
     </div>
   );

@@ -5,6 +5,7 @@
  *   data/stations.geojson      – one Point per station, with routes, transfers and neighbourhood
  *   data/routes.json           – route colours, names and ordered stop lists
  *   data/neighborhoods.geojson – neighbourhood + sub-neighbourhood outlines (CC BY-SA 4.0, see README)
+ *   data/parks.geojson         – NYC Parks properties, with neighbourhood and nearest stops
  *
  * Run: npm run build:data   (re-run when the MTA publishes a new quarterly schedule)
  */
@@ -15,6 +16,7 @@ import { parseCsv } from "../src/csv.js";
 import { buildSegments, type LonLat, type Pattern } from "../src/segments.js";
 import { buildRouteStops } from "../src/route-stops.js";
 import { loadNeighborhoods, NEIGHBORHOODS_SOURCE } from "../src/neighborhoods.js";
+import { buildParks, PARKS_SOURCE } from "../src/parks.js";
 
 const GTFS_URLS = [
   "https://rrgtfsfeeds.s3.amazonaws.com/gtfs_subway.zip",
@@ -246,6 +248,25 @@ async function main() {
     const boroughs = new Set(stationFeatures.map((f) => f.properties.borough).filter(Boolean));
     console.log(`  Neighbourhoods: ${stationFeatures.length - missing.length}/${stationFeatures.length} stations tagged across ${boroughs.size} boroughs${missing.length ? ` (untagged: ${missing.slice(0, 5).join(", ")})` : ""}`);
   }
+  // ---- Parks ---------------------------------------------------------------
+  const parks = await buildParks(
+    stationFeatures.map((f) => ({ id: f.properties.id, coords: f.geometry.coordinates as [number, number] })),
+    areas?.neighborhoodAt,
+    areas?.subNeighborhoodAt,
+  );
+  if (parks) {
+    writeJson("parks.geojson", parks.geojson);
+    const kb = Math.round(JSON.stringify(parks.geojson).length / 1024);
+    const { total, kept, skipped, byType } = parks.summary;
+    console.log(`  Wrote ${kept} of ${total} parks (${kb} KB) from ${PARKS_SOURCE}`);
+    console.log(`    Kept: ${byType}`);
+    console.log(`    Skipped: ${skipped || "none"}`);
+    const cp = parks.geojson.features.find((f) => f.properties.name === "Central Park");
+    console.log(`    Central Park: ${cp ? `${cp.properties.acres} acres, ${cp.properties.nearby.length} nearby stops, in ${cp.properties.neighborhood || "?"}` : "not found"}`);
+    const rp = parks.geojson.features.find((f) => f.properties.name === "Riverside Park");
+    console.log(`    Riverside Park passes through: ${rp ? rp.properties.areaIds.join(", ") : "not found"}`);
+  }
+
   const ts = stationFeatures.find((f) => f.properties.id === "127");
   console.log(`  Times Sq (127) transfers: ${ts?.properties.allRoutes.join(" ") ?? "not found"}`);
   console.log(`Wrote ${lines.features.length} line segments and ${stationFeatures.length} stations to ${OUT_DIR}`);

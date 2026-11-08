@@ -1,21 +1,29 @@
+import { useState } from "react";
 import type { Feature, MultiPolygon, Point } from "geojson";
 import { Bullet } from "./Bullet";
-import type { AreaProps, Routes, StationProps } from "./types";
+import type { AreaProps, ParkProps, Routes, StationProps } from "./types";
 
 type Station = Feature<Point, StationProps>;
 type Area = Feature<MultiPolygon, AreaProps>;
+type Park = Feature<MultiPolygon, ParkProps>;
+
+/** How many parks to list before "Show all". */
+const PARKS_SHOWN = 6;
 
 /**
  * Side panel for a selected neighbourhood or sub-neighbourhood: where it sits
  * (Borough › Neighbourhood › Sub), what it is, what's inside it, and its lines and stops.
  */
-export function AreaPanel({ area, parent, subs, onSelectArea, routes, stationsById, focusedLine, selectedStationId, transitOn, onFocusLine, onSelectStation, onClose }: {
+export function AreaPanel({ area, parent, subs, parks = [], onSelectArea, onSelectPark, routes, stationsById, focusedLine, selectedStationId, transitOn, onFocusLine, onSelectStation, onClose }: {
   area: Area;
   /** The neighbourhood a sub-neighbourhood sits in (null for a neighbourhood) */
   parent: Area | null;
   /** Sub-neighbourhoods inside this neighbourhood */
   subs: Area[];
+  /** Parks inside this area (any order; shown largest first) */
+  parks?: Park[];
   onSelectArea: (id: string) => void;
+  onSelectPark?: (id: string) => void;
   routes: Routes;
   stationsById: Map<string, Station>;
   focusedLine: string;
@@ -32,6 +40,9 @@ export function AreaPanel({ area, parent, subs, onSelectArea, routes, stationsBy
     .filter((s): s is Station => !!s)
     .sort((a, b) => a.properties.name.localeCompare(b.properties.name, "en", { numeric: true }));
   const sortedSubs = [...subs].sort((a, b) => a.properties.name.localeCompare(b.properties.name));
+  const sortedParks = [...parks].sort((a, b) => b.properties.acres - a.properties.acres);
+  const [showAllParks, setShowAllParks] = useState(false);
+  const shownParks = showAllParks ? sortedParks : sortedParks.slice(0, PARKS_SHOWN);
 
   return (
     <section className="card area-card">
@@ -71,6 +82,27 @@ export function AreaPanel({ area, parent, subs, onSelectArea, routes, stationsBy
       )}
       {p.wikipedia && (
         <a className="link" href={p.wikipedia} target="_blank" rel="noreferrer">Read more on Wikipedia ↗</a>
+      )}
+
+      {sortedParks.length > 0 && onSelectPark && (
+        <>
+          <h3>{sortedParks.length} {sortedParks.length === 1 ? "park" : "parks"}</h3>
+          <ul className="area-parks">
+            {shownParks.map((pk) => (
+              <li key={pk.properties.id}>
+                <button onClick={() => onSelectPark(pk.properties.id)}>
+                  <span className="stop-name">{pk.properties.name}</span>
+                  <span className="muted">{pk.properties.type}{pk.properties.acres >= 1 ? ` · ${Math.round(pk.properties.acres)} ac` : ""}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {sortedParks.length > PARKS_SHOWN && (
+            <button className="text-button" onClick={() => setShowAllParks((v) => !v)}>
+              {showAllParks ? "Show fewer" : `Show all ${sortedParks.length}`}
+            </button>
+          )}
+        </>
       )}
 
       {stops.length === 0 ? (

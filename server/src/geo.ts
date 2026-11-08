@@ -18,7 +18,7 @@ export interface Area {
 const KX = 111_320 * Math.cos((40.7 * Math.PI) / 180);
 const KY = 110_540;
 
-function inRing(p: LonLat, ring: Position[]) {
+export function inRing(p: LonLat, ring: Position[]) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i], [xj, yj] = ring[j];
@@ -28,9 +28,9 @@ function inRing(p: LonLat, ring: Position[]) {
 }
 
 /** First ring is the outline, the rest are holes. */
-const inPolygon = (p: LonLat, rings: Position[][]) => inRing(p, rings[0]) && !rings.slice(1).some((h) => inRing(p, h));
+export const inPolygon = (p: LonLat, rings: Position[][]) => inRing(p, rings[0]) && !rings.slice(1).some((h) => inRing(p, h));
 
-function distanceToRing(p: LonLat, ring: Position[]) {
+export function distanceToRing(p: LonLat, ring: Position[]) {
   let best = Infinity;
   for (let i = 1; i < ring.length; i++) {
     const ax = ring[i - 1][0] * KX, ay = ring[i - 1][1] * KY, bx = ring[i][0] * KX, by = ring[i][1] * KY;
@@ -44,7 +44,7 @@ function distanceToRing(p: LonLat, ring: Position[]) {
 }
 
 /** Douglas–Peucker simplification of one ring, tolerance in metres. Keeps it closed. */
-function simplifyRing(ring: Position[], tolerance: number): Position[] {
+export function simplifyRing(ring: Position[], tolerance: number): Position[] {
   if (ring.length <= 5) return ring;
   const keep = new Uint8Array(ring.length);
   keep[0] = keep[ring.length - 1] = 1;

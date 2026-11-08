@@ -1,5 +1,5 @@
 /** Where the user has been sent before, per kind, so rolls prefer somewhere new. */
-const VISITED_KEYS = { stop: "standclear.visited", neighborhood: "standclear.visitedAreas" } as const;
+const VISITED_KEYS = { stop: "standclear.visited", neighborhood: "standclear.visitedAreas", park: "standclear.visitedParks" } as const;
 type Kind = keyof typeof VISITED_KEYS;
 
 export function loadVisited(kind: Kind = "stop"): string[] {

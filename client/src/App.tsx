@@ -1,21 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import mapboxgl, { type GeoJSONSource } from "mapbox-gl";
 import type { Feature, FeatureCollection, MultiPolygon, Point } from "geojson";
-import { fetchArrivals, fetchAreas, fetchRealtime, fetchStatic } from "./api";
+import { fetchArrivals, fetchAreas, fetchParks, fetchRealtime, fetchStatic } from "./api";
 import { loadVisited, pickRandom, saveVisited } from "./random";
 import { setAmbientFocus, startAmbientTrains } from "./ambient";
 import { Bullet, routeSort } from "./Bullet";
 import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
-import { AreaSearch } from "./AreaSearch";
+import { ParkPanel } from "./ParkPanel";
+import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
+import { PlaceSearch, type PlacePick } from "./PlaceSearch";
 import { addAreaLayers, areaBounds, boroughBounds, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
-import type { AreaProps, Areas, Arrival, Lines, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
+import type { AreaProps, Areas, Arrival, Lines, ParkProps, Parks, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 
 type Station = Feature<Point, StationProps>;
 type Area = Feature<MultiPolygon, AreaProps>;
+type Park = Feature<MultiPolygon, ParkProps>;
 type Expr = mapboxgl.ExpressionSpecification;
 const NYC: [number, number] = [-73.94, 40.72];
 const REALTIME_MS = 30_000;
@@ -45,8 +48,8 @@ const TRANSIT_LAYERS = ["lines", "lines-hit", "stations", "station-labels", "tra
  * (The key is versioned: bumping it resets everyone to the current defaults.)
  */
 const LAYERS_KEY = "standclear.layers.v2";
-const DEFAULT_LAYERS = { transit: true, areas: true, boroughs: false };
-const loadLayerPrefs = (): { transit: boolean; areas: boolean; boroughs: boolean } => {
+const DEFAULT_LAYERS = { transit: true, areas: true, boroughs: false, parks: true };
+const loadLayerPrefs = (): { transit: boolean; areas: boolean; boroughs: boolean; parks: boolean } => {
   try { return { ...DEFAULT_LAYERS, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}") }; }
   catch { return DEFAULT_LAYERS; }
 };
@@ -56,6 +59,7 @@ const BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
 /** Camera speed for flying to a stop or a neighbourhood (Mapbox flyTo `speed`; lower is slower). */
 const STOP_FLY_SPEED = 0.9;
 const HIGHLIGHT_KEY = "standclear.highlightBoroughs";
+const PARK_FILTER_KEY = "standclear.parkGroups";
 
 /** Map padding that keeps framed things clear of the side panel (or the bottom sheet on phones). */
 const panelPadding = () =>
@@ -95,6 +99,7 @@ export default function App() {
   const [showTransit, setShowTransit] = useState(() => loadLayerPrefs().transit);
   const [showAreas, setShowAreas] = useState(() => loadLayerPrefs().areas);
   const [showBoroughs, setShowBoroughs] = useState(() => loadLayerPrefs().boroughs);
+  const [showParks, setShowParks] = useState(() => loadLayerPrefs().parks);
   const [areas, setAreas] = useState<Areas | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   /**
@@ -103,8 +108,44 @@ export default function App() {
    */
   const [areaHover, setAreaHover] = useState<{ id: string; sub?: string; x: number; y: number } | null>(null);
   useEffect(() => {
-    try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas, boroughs: showBoroughs })); } catch { /* storage unavailable */ }
-  }, [showTransit, showAreas, showBoroughs]);
+    try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas, boroughs: showBoroughs, parks: showParks })); } catch { /* storage unavailable */ }
+  }, [showTransit, showAreas, showBoroughs, showParks]);
+
+  // ---- Parks -----------------------------------------------------------------
+  const [parks, setParks] = useState<Parks | null>(null);
+  const [selectedParkId, setSelectedParkId] = useState<string | null>(null);
+  const [parkHover, setParkHover] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [visitedParks, setVisitedParks] = useState<string[]>(() => loadVisited("park"));
+  const parksById = useMemo(() => new Map((parks?.features ?? []).map((f) => [f.properties.id, f as Park])), [parks]);
+  /** Parks in each neighbourhood and sub-neighbourhood, counting every one a park passes through */
+  const parksByArea = useMemo(() => {
+    const byArea = new Map<string, Park[]>();
+    for (const f of (parks?.features ?? []) as Park[]) {
+      const p = f.properties;
+      const ids = new Set([...(p.areaIds ?? [p.areaId]), ...(p.subAreaIds ?? [p.subAreaId])].filter(Boolean));
+      for (const id of ids) byArea.set(id, [...(byArea.get(id) ?? []), f]);
+    }
+    return byArea;
+  }, [parks]);
+  const selectedPark = selectedParkId ? parksById.get(selectedParkId) ?? null : null;
+
+  // Park type filter: chosen groups (none = every park), remembered between visits.
+  const [parkGroups, setParkGroups] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(PARK_FILTER_KEY) ?? "[]"); } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PARK_FILTER_KEY, JSON.stringify(parkGroups)); } catch { /* storage unavailable */ }
+  }, [parkGroups]);
+  const parkGroupCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const f of parks?.features ?? []) { const g = parkGroupOf(f.properties.type); counts[g] = (counts[g] ?? 0) + 1; }
+    return counts;
+  }, [parks]);
+  /** Park types currently shown, or null for all of them */
+  const visibleParkTypes = useMemo(() => {
+    if (!parks || !parkGroups.length) return null;
+    return typesForGroups(parkGroups, [...new Set(parks.features.map((f) => f.properties.type))]);
+  }, [parks, parkGroups]);
 
   // Boroughs whose neighbourhoods are highlighted on the map (none = no highlight).
   const [highlightBoroughs, setHighlightBoroughs] = useState<string[]>(() => {
@@ -143,10 +184,20 @@ export default function App() {
   const selectArea = (id: string, toggle = true) => {
     if (!areasById.has(id)) return;
     setShowAreas(true);
+    setSelectedParkId(null); // one place card at a time: a neighbourhood or a park
     setSelectedAreaId((current) => (toggle && current === id ? null : id));
   };
   const selectAreaRef = useRef(selectArea);
   selectAreaRef.current = selectArea;
+
+  /** Select a park (or deselect it if it's already selected). */
+  const selectPark = (id: string, toggle = true) => {
+    setShowParks(true);
+    setSelectedAreaId(null);
+    setSelectedParkId((current) => (toggle && current === id ? null : id));
+  };
+  const selectParkRef = useRef(selectPark);
+  selectParkRef.current = selectPark;
 
   const stationsById = useMemo(
     () => new Map((stations?.features ?? []).map((f) => [f.properties.id, f as Station])),
@@ -174,17 +225,18 @@ export default function App() {
   const selectStationRef = useRef(selectStation);
   selectStationRef.current = selectStation;
 
-  // Esc backs out one step at a time: the selected stop, then the neighbourhood, then the focused line.
+  // Esc backs out one step at a time: the selected stop, then the park or neighbourhood, then the focused line.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (selected) setSelected(null);
+      else if (selectedParkId) setSelectedParkId(null);
       else if (selectedAreaId) setSelectedAreaId(null);
       else if (lineFilter) setLineFilter("");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, selectedAreaId, lineFilter]);
+  }, [selected, selectedParkId, selectedAreaId, lineFilter]);
 
   // station id -> coordinates, for placing trains
   const coordsById = useMemo(() => {
@@ -228,21 +280,62 @@ export default function App() {
       // Neighbourhoods are optional: if the build couldn't download them, the toggle just stays off.
       try {
         const areaData = await fetchAreas();
-        if (areaData.features.length && !areaData.features[0].properties?.kind) {
-          setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
-          return;
-        }
-        addAreaLayers(m, areaData, "lines", "stations");
-        setAreas(areaData);
         // Sub-neighbourhood stops come from a newer build (older ones left them all empty).
         const subs = areaData.features.filter((f) => f.properties.kind === "sub");
-        if (subs.length && subs.every((f) => !f.properties.stations?.length)) {
+        if (areaData.features.length && !areaData.features[0].properties?.kind) {
           setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
+        } else {
+          addAreaLayers(m, areaData, "lines", "stations");
+          setAreas(areaData);
+          if (subs.length && subs.every((f) => !f.properties.stations?.length)) {
+            setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
+          }
         }
       } catch (e) {
         console.warn("neighborhoods unavailable", e);
       }
+      // Parks are optional too. Added after the neighbourhoods so they draw on top of them
+      // (and still under the subway lines).
+      try {
+        const parkData = await fetchParks();
+        addParkLayers(m, parkData, "lines", "stations");
+        setParks(parkData);
+      } catch (e) {
+        console.warn("parks unavailable (run npm run build:data)", e);
+      }
     });
+
+    // ---- Park hover + click (transit, when shown, wins) --------------------
+    const overTransitForParks = (point: mapboxgl.Point) =>
+      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
+    let hoveredPark: string | null = null;
+    const setParkHoverState = (id: string | null) => {
+      if (hoveredPark === id) return;
+      if (hoveredPark) m.setFeatureState({ source: "parks", id: hoveredPark }, { hover: false });
+      if (id) m.setFeatureState({ source: "parks", id }, { hover: true });
+      hoveredPark = id;
+    };
+    m.on("mousemove", "parks-fill", (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (!id || overTransitForParks(e.point)) { setParkHoverState(null); setParkHover(null); return; }
+      setParkHoverState(id);
+      m.getCanvas().style.cursor = "pointer";
+      setParkHover({ id, x: e.point.x, y: e.point.y });
+    });
+    m.on("mouseleave", "parks-fill", () => {
+      setParkHoverState(null);
+      setParkHover(null);
+      m.getCanvas().style.cursor = "";
+    });
+    m.on("click", "parks-fill", (e) => {
+      if (overTransitForParks(e.point)) return;
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (id) selectParkRef.current(id);
+    });
+    /** Parks sit above neighbourhoods and boroughs, so they take hovers and clicks first. */
+    const overPark = (point: mapboxgl.Point) =>
+      !!m.getLayer("parks-fill") && m.getLayoutProperty("parks-fill", "visibility") !== "none" &&
+      m.queryRenderedFeatures(point, { layers: ["parks-fill"] }).length > 0;
 
     // ---- Neighbourhood hover + click (transit, when shown, wins) ----------
     const overTransit = (point: mapboxgl.Point) =>
@@ -264,7 +357,7 @@ export default function App() {
     };
     m.on("mousemove", "areas-fill", (e) => {
       const parentId = e.features?.[0]?.properties?.id as string | undefined;
-      if (!parentId || overTransit(e.point)) { setAreaHoverState(null); setAreaHover(null); return; }
+      if (!parentId || overTransit(e.point) || overPark(e.point)) { setAreaHoverState(null); setAreaHover(null); return; }
       const target = areaTarget(e.point, parentId);
       setAreaHoverState(target.id);
       m.getCanvas().style.cursor = "pointer";
@@ -276,7 +369,7 @@ export default function App() {
       m.getCanvas().style.cursor = "";
     });
     m.on("click", "areas-fill", (e) => {
-      if (overTransit(e.point)) return;
+      if (overTransit(e.point) || overPark(e.point)) return;
       const parentId = e.features?.[0]?.properties?.id as string | undefined;
       if (parentId) selectAreaRef.current(areaTarget(e.point, parentId).id);
     });
@@ -292,7 +385,7 @@ export default function App() {
     };
     m.on("mousemove", "boroughs-fill", (e) => {
       const borough = e.features?.[0]?.properties?.borough as string | undefined;
-      if (!borough || overTransit(e.point) || neighborhoodsShowing()) { clearBoroughHover(); return; }
+      if (!borough || overTransit(e.point) || overPark(e.point) || neighborhoodsShowing()) { clearBoroughHover(); return; }
       if (borough !== hoveredBorough) { setBoroughHover(m, borough); hoveredBorough = borough; }
       m.getCanvas().style.cursor = "pointer";
       setBoroughHoverCard({ name: borough, x: e.point.x, y: e.point.y });
@@ -302,7 +395,7 @@ export default function App() {
       m.getCanvas().style.cursor = "";
     });
     m.on("click", "boroughs-fill", (e) => {
-      if (overTransit(e.point) || neighborhoodsShowing()) return;
+      if (overTransit(e.point) || overPark(e.point) || neighborhoodsShowing()) return;
       const borough = e.features?.[0]?.properties?.borough as string | undefined;
       if (borough) toggleHighlightRef.current(borough);
     });
@@ -387,6 +480,29 @@ export default function App() {
     if (!showBoroughs || showAreas) setBoroughHoverCard(null);
   }, [showAreas, showBoroughs, areas]);
 
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !parks) return;
+    setParksVisible(m, showParks);
+    if (!showParks) { setSelectedParkId(null); setParkHover(null); }
+  }, [showParks, parks]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (m && parks) setParkTypeFilter(m, visibleParkTypes);
+  }, [visibleParkTypes, parks]);
+
+  // Highlight the selected park and fly to it, the same way as stops and neighbourhoods.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !parks) return;
+    setSelectedPark(m, selectedParkId);
+    const park = selectedParkId ? parksById.get(selectedParkId) : null;
+    if (!park) return;
+    const camera = m.cameraForBounds(parkBounds(park.geometry.coordinates), { padding: panelPadding(), maxZoom: 16 });
+    if (camera) m.flyTo({ ...camera, speed: STOP_FLY_SPEED, essential: true });
+  }, [selectedParkId, parks, parksById]);
+
   // Borough highlight: brighten those boroughs' neighbourhoods and, after a change, frame them.
   useEffect(() => {
     const m = map.current;
@@ -454,7 +570,8 @@ export default function App() {
     const next = [...visited.filter((v) => v !== pick.properties.id), pick.properties.id];
     setVisited(next);
     saveVisited(next, "stop");
-    setSelectedAreaId(null); // so the panel opens on the stop, not a neighbourhood from earlier
+    setSelectedAreaId(null); // so the panel opens on the stop, not a neighbourhood or park from earlier
+    setSelectedParkId(null);
     selectStation(pick.properties.id, [], false);
   };
   const rollNeighborhood = (boroughs: string[]) => {
@@ -469,11 +586,42 @@ export default function App() {
     selectArea(pick.properties.id, false);
   };
 
+  const rollPark = (boroughs: string[]) => {
+    if (!parks) return;
+    // The park types picked in the left panel, or by default proper parks only
+    // (no traffic triangles or playgrounds), in the chosen boroughs.
+    const typeOk = (t: string) => (visibleParkTypes ? visibleParkTypes.includes(t) : DESTINATION_TYPES.has(t));
+    const pool = (parks.features as Park[]).filter((p) => typeOk(p.properties.type) && inBoroughs(p.properties.borough, boroughs));
+    const pick = pickRandom(pool, visitedParks);
+    if (!pick) return;
+    const next = [...visitedParks.filter((v) => v !== pick.properties.id), pick.properties.id];
+    setVisitedParks(next);
+    saveVisited(next, "park");
+    setSelected(null); // so the panel opens on the park
+    selectPark(pick.properties.id, false);
+  };
+
   const takeMeSomewhere = (kind: RandomKind, boroughs: string[]) =>
-    kind === "stop" ? rollStop(boroughs) : rollNeighborhood(boroughs);
+    kind === "stop" ? rollStop(boroughs) : kind === "park" ? rollPark(boroughs) : rollNeighborhood(boroughs);
   // Borough chips only make sense once stations carry borough data (from the neighbourhood build).
   const hasBoroughs = !!stations?.features.some((s) => s.properties.borough);
 
+
+  // ---- Search: picking a result does what clicking it on the map would ------
+  const routesAtStation = useMemo(
+    () => (s: Station) => [...new Set(s.properties.routes.map((r) => baseRoute(r, routes)))].sort(routeSort),
+    [routes],
+  );
+  const pickFromSearch = ({ kind, id }: PlacePick) => {
+    if (kind === "neighborhood" || kind === "sub") selectArea(id, false);
+    else if (kind === "park") selectPark(id, false);
+    else if (kind === "station") { setShowTransit(true); selectStation(id, [], false); }
+    else if (kind === "line") { setShowTransit(true); setLineFilter(id); }
+    else if (kind === "borough") {
+      if (!showAreas && !showBoroughs) setShowAreas(true); // so the highlight has something to show
+      if (!highlightBoroughs.includes(id)) toggleHighlight(id);
+    }
+  };
 
   const routeList = useMemo(
     () => Object.values(routes).filter((r) => stations?.features.some((s) => s.properties.routes.includes(r.id))),
@@ -490,7 +638,16 @@ export default function App() {
           <p className="sub">Every line, stop and train in NYC's subway. Poke around.</p>
         </header>
 
-        {areas && <AreaSearch areas={areas.features as Area[]} onSelect={(id) => selectArea(id, false)} />}
+        {stations && (
+          <PlaceSearch
+            areas={(areas?.features ?? []) as Area[]}
+            parks={(parks?.features ?? []) as Park[]}
+            stations={stations.features as Station[]}
+            routes={routes}
+            routesAt={routesAtStation}
+            onPick={pickFromSearch}
+          />
+        )}
 
         {areas && (showAreas || showBoroughs) && (
           <div className="borough-highlight">
@@ -515,6 +672,32 @@ export default function App() {
           </div>
         )}
 
+        {parks && showParks && (
+          <div className="borough-highlight">
+            <div className="borough-highlight-head">
+              <span className="filter-label">Park types</span>
+              {parkGroups.length > 0 && (
+                <button className="text-button" onClick={() => setParkGroups([])}>Show all</button>
+              )}
+            </div>
+            <div className="chips" role="group" aria-label="Filter parks by type">
+              {PARK_GROUPS.filter((g) => parkGroupCounts[g.key]).map((g) => {
+                const on = parkGroups.includes(g.key);
+                return (
+                  <button
+                    key={g.key}
+                    className={`chip park-chip${on ? " on" : ""}`}
+                    aria-pressed={on}
+                    onClick={() => setParkGroups((list) => (on ? list.filter((x) => x !== g.key) : [...list, g.key]))}
+                  >
+                    {g.label} <span className="chip-count">{parkGroupCounts[g.key]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {showTransit && (
         <>
         <label className="field">
@@ -534,9 +717,24 @@ export default function App() {
         </>
         )}
 
+        {selectedPark && (
+          <ParkPanel
+            park={selectedPark}
+            routes={routes}
+            stationsById={stationsById}
+            areaExists={(id) => areasById.has(id)}
+            selectedStationId={selected?.properties.id}
+            onSelectArea={(id) => selectArea(id, false)}
+            onSelectStation={(id) => { setShowTransit(true); selectStation(id); }}
+            onClose={() => setSelectedParkId(null)}
+          />
+        )}
+
         {selectedArea && (
           <AreaPanel
             area={selectedArea}
+            parks={(parksByArea.get(selectedArea.properties.id) ?? []).filter((pk) => !visibleParkTypes || visibleParkTypes.includes(pk.properties.type))}
+            onSelectPark={(id) => selectPark(id, false)}
             parent={selectedArea.properties.parent ? areasById.get(selectedArea.properties.parent) ?? null : null}
             subs={(areas?.features as Area[] | undefined)?.filter((f) => f.properties.kind === "sub" && f.properties.parent === selectedArea.properties.id) ?? []}
             onSelectArea={(id) => selectArea(id, false)}
@@ -636,6 +834,7 @@ export default function App() {
           {visited.length} stops rolled · Data: MTA GTFS &amp; GTFS-RT · Neighborhoods:{" "}
           <a href="https://github.com/chriswhong/nyc-neighborhood-boundaries" target="_blank" rel="noreferrer">NYC Neighborhood Boundaries</a>{" "}
           (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>)
+          {parks && <> · Parks: <a href="https://data.cityofnewyork.us/Recreation/Parks-Properties/enfh-gkve" target="_blank" rel="noreferrer">NYC Parks via NYC Open Data</a></>}
         </footer>
       </aside>
 
@@ -666,7 +865,23 @@ export default function App() {
         );
       })()}
 
-      {areaHover && !hover && areasById.get(areaHover.id) && (() => {
+      {parkHover && !hover && parksById.get(parkHover.id) && (() => {
+        const p = parksById.get(parkHover.id)!.properties;
+        const flip = parkHover.x > window.innerWidth - 300;
+        return (
+          <div className={`line-card park-hover${flip ? " flip" : ""}`} style={{ left: parkHover.x, top: parkHover.y }}>
+            <div>
+              <strong>{p.name}</strong>
+              <span>
+                {p.type || "Park"}{p.acres >= 1 ? ` · ${Math.round(p.acres).toLocaleString()} acres` : ""}
+                {selectedParkId === p.id ? " · Click to close" : ""}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {areaHover && !hover && !parkHover && areasById.get(areaHover.id) && (() => {
         const a = areasById.get(areaHover.id)!.properties;
         const parent = a.kind === "sub" ? areasById.get(a.parent)?.properties : undefined;
         const flip = areaHover.x > window.innerWidth - 300;
@@ -688,16 +903,19 @@ export default function App() {
         transit={showTransit}
         areas={showAreas}
         boroughs={showBoroughs}
+        parks={showParks}
         areasAvailable={!!areas}
+        parksAvailable={!!parks}
         onTransit={setShowTransit}
         onAreas={setShowAreas}
         onBoroughs={setShowBoroughs}
+        onParks={setShowParks}
       />
 
       <RandomPicker
         onPick={takeMeSomewhere}
         disabled={!stations}
-        unavailable={areas ? [] : ["neighborhood"]}
+        unavailable={[...(areas ? [] : ["neighborhood" as const]), ...(parks ? [] : ["park" as const])]}
         boroughsAvailable={hasBoroughs}
       />
 

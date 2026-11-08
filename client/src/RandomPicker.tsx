@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-export type RandomKind = "stop" | "neighborhood";
+export type RandomKind = "stop" | "neighborhood" | "park";
 
 const BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
 const BOROUGHS_KEY = "standclear.randomBoroughs";
@@ -70,6 +70,17 @@ const OPTIONS: { kind: RandomKind; title: string; detail: string; icon: JSX.Elem
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 7l5-3 6 3 5-3v13l-5 3-6-3-5 3z" />
         <path d="M9 4v13M15 7v13" />
+      </svg>
+    ),
+  },
+  {
+    kind: "park",
+    title: "A random park",
+    detail: "Get some fresh air",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3l5 7h-3l4 6H6l4-6H7z" />
+        <path d="M12 16v5" />
       </svg>
     ),
   },

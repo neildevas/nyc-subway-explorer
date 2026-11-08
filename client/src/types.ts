@@ -80,3 +80,31 @@ export interface AreaProps {
   routes: string[];
 }
 export type Areas = FeatureCollection<MultiPolygon, AreaProps>;
+
+/** A property managed by NYC Parks (NYC Open Data, Parks Properties). */
+export interface ParkProps {
+  id: string;
+  name: string;
+  /** e.g. "Flagship Park", "Playground", "Garden" */
+  type: string;
+  subcategory: string;
+  acres: number;
+  borough: string;
+  address: string;
+  /** NYC Parks page */
+  url: string;
+  waterfront: boolean;
+  areaId: string;
+  neighborhood: string;
+  subAreaId: string;
+  subNeighborhood: string;
+  /** Every neighbourhood the park passes through, main one first (older builds lack this) */
+  areaIds?: string[];
+  /** Every sub-neighbourhood it passes through */
+  subAreaIds?: string[];
+  /** [lon, lat] where the park's name goes */
+  label: [number, number];
+  /** Nearest subway stations: id and straight-line metres (0 = inside the park) */
+  nearby: { id: string; m: number }[];
+}
+export type Parks = FeatureCollection<MultiPolygon, ParkProps>;

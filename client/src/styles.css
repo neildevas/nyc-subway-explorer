@@ -523,3 +523,46 @@ footer a { color: inherit; }
   cursor: pointer;
 }
 .text-button:hover { color: var(--ink); }
+
+/* ---- Park card ------------------------------------------------------------- */
+.park-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
+.park-facts span { padding: 3px 9px; border-radius: 999px; background: #1e2a21; color: #b9e8c4; font-size: 12px; }
+.park-facts .park-type { background: #2c5a37; color: #e6f7ea; font-weight: 600; }
+.walk { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+/* Parks listed in a neighborhood panel */
+.area-parks { list-style: none; margin: 0 0 6px; padding: 0; }
+.area-parks button {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.area-parks button:hover { background: rgba(255, 255, 255, 0.06); }
+.area-parks .muted { margin: 0; font-size: 11px; white-space: nowrap; }
+.line-card.park-hover { border-left-color: #4caf6a; }
+
+/* Park type filter chips: green when on, with a count */
+.chip.park-chip.on { background: #4caf6a; border-color: #4caf6a; color: #08130b; }
+.chip-count { margin-left: 4px; font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; }
+
+/* ---- Map search results: icon, name + context, right-hand meta ------------ */
+.area-search .suggestions button { justify-content: flex-start; }
+.area-search .result-text { flex: 1; min-width: 0; }
+.area-search .result-text .name, .area-search .result-text .note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
+.result-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.result-icon.kind-park { color: #4caf6a; }
+.station-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px #121212, 0 0 0 3px #555; }
+.result-bullets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; max-width: 110px; }
