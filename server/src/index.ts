@@ -10,7 +10,7 @@ const CACHE_MS = 20_000; // MTA feeds refresh roughly every 30s
 const app = express();
 
 // ---- Static network data (built by `npm run build:data`) -------------------
-for (const file of ["lines.geojson", "stations.geojson", "routes.json", "neighborhoods.geojson", "parks.geojson", "markets.geojson"]) {
+for (const file of ["lines.geojson", "stations.geojson", "routes.json", "neighborhoods.geojson", "parks.geojson"]) {
   app.get(`/api/${file}`, (_req, res) => {
     const path = join(DATA_DIR, file);
     if (!existsSync(path)) return res.status(503).json({ error: "Run `npm run build:data` in /server first." });

@@ -1,13 +1,11 @@
 import { useState } from "react";
 import type { Feature, MultiPolygon, Point } from "geojson";
 import { Bullet } from "./Bullet";
-import { marketStatus } from "./markets";
-import type { AreaProps, MarketProps, ParkProps, Routes, StationProps } from "./types";
+import type { AreaProps, ParkProps, Routes, StationProps } from "./types";
 
 type Station = Feature<Point, StationProps>;
 type Area = Feature<MultiPolygon, AreaProps>;
 type Park = Feature<MultiPolygon, ParkProps>;
-type Market = Feature<Point, MarketProps>;
 
 /** How many parks to list before "Show all". */
 const PARKS_SHOWN = 6;
@@ -16,7 +14,7 @@ const PARKS_SHOWN = 6;
  * Side panel for a selected neighbourhood or sub-neighbourhood: where it sits
  * (Borough › Neighbourhood › Sub), what it is, what's inside it, and its lines and stops.
  */
-export function AreaPanel({ area, parent, subs, parks = [], markets = [], onSelectArea, onSelectPark, onSelectMarket, routes, stationsById, focusedLine, selectedStationId, transitOn, onFocusLine, onSelectStation, onClose }: {
+export function AreaPanel({ area, parent, subs, parks = [], onSelectArea, onSelectPark, routes, stationsById, focusedLine, selectedStationId, transitOn, onFocusLine, onSelectStation, onClose }: {
   area: Area;
   /** The neighbourhood a sub-neighbourhood sits in (null for a neighbourhood) */
   parent: Area | null;
@@ -26,9 +24,6 @@ export function AreaPanel({ area, parent, subs, parks = [], markets = [], onSele
   parks?: Park[];
   onSelectArea: (id: string) => void;
   onSelectPark?: (id: string) => void;
-  /** Farmers markets inside this area */
-  markets?: Market[];
-  onSelectMarket?: (id: string) => void;
   routes: Routes;
   stationsById: Map<string, Station>;
   focusedLine: string;
@@ -107,25 +102,6 @@ export function AreaPanel({ area, parent, subs, parks = [], markets = [], onSele
               {showAllParks ? "Show fewer" : `Show all ${sortedParks.length}`}
             </button>
           )}
-        </>
-      )}
-
-      {markets.length > 0 && onSelectMarket && (
-        <>
-          <h3>{markets.length} farmers {markets.length === 1 ? "market" : "markets"}</h3>
-          <ul className="area-parks">
-            {[...markets].sort((a, b) => a.properties.name.localeCompare(b.properties.name)).map((mk) => {
-              const status = marketStatus(mk.properties);
-              return (
-                <li key={mk.properties.id}>
-                  <button onClick={() => onSelectMarket(mk.properties.id)}>
-                    <span className="stop-name">{mk.properties.name}</span>
-                    <span className={`muted market-mini ${status.state}`}>{mk.properties.daysText || status.label}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
         </>
       )}
 

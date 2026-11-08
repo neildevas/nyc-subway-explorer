@@ -566,18 +566,3 @@ footer a { color: inherit; }
 .result-icon.kind-park { color: #4caf6a; }
 .station-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px #121212, 0 0 0 3px #555; }
 .result-bullets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; max-width: 110px; }
-
-/* ---- Farmers market card ---------------------------------------------------- */
-.line-card.market-hover { border-left-color: #ec5f98; }
-.market-status { margin: 6px 0 8px; font-size: 13px; font-weight: 600; }
-.market-status.today { color: #ff9ec4; }
-.market-status.season { color: var(--ink); }
-.market-status.off, .market-status.unknown { color: var(--muted); font-weight: 500; }
-.market-when { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0 0 8px; font-size: 13px; }
-.market-when dt { color: var(--muted); }
-.market-when dd { margin: 0; }
-.market-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
-.market-facts span { padding: 3px 9px; border-radius: 999px; background: #2e1a24; color: #f5c2d7; font-size: 12px; }
-.market-mini.today { color: #ff9ec4; }
-.result-icon.kind-market { color: #ec5f98; }
-.fine { font-size: 11px; margin-top: 10px; }

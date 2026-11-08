@@ -1,4 +1,4 @@
-import type { Areas, Arrival, Lines, Markets, Parks, Routes, Stations, Train } from "./types";
+import type { Areas, Arrival, Lines, Parks, Routes, Stations, Train } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   // no-store: always fetch fresh, so rebuilt data and live trains are never served from browser cache
@@ -25,6 +25,3 @@ export const fetchAreas = () => get<Areas>("/api/neighborhoods.geojson");
 
 /** NYC Parks properties. Optional: the app works without them if the build skipped them. */
 export const fetchParks = () => get<Parks>("/api/parks.geojson");
-
-/** NYC farmers markets. Optional: the app works without them if the build skipped them. */
-export const fetchMarkets = () => get<Markets>("/api/markets.geojson");
