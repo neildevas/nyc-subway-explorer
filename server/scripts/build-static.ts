@@ -6,6 +6,7 @@
  *   data/routes.json           – route colours, names and ordered stop lists
  *   data/neighborhoods.geojson – neighbourhood + sub-neighbourhood outlines (CC BY-SA 4.0, see README)
  *   data/parks.geojson         – NYC Parks properties, with neighbourhood and nearest stops
+ *   data/markets.geojson       – NYC farmers markets, with days, season, neighbourhood and nearest stops
  *
  * Run: npm run build:data   (re-run when the MTA publishes a new quarterly schedule)
  */
@@ -17,6 +18,7 @@ import { buildSegments, type LonLat, type Pattern } from "../src/segments.js";
 import { buildRouteStops } from "../src/route-stops.js";
 import { loadNeighborhoods, NEIGHBORHOODS_SOURCE } from "../src/neighborhoods.js";
 import { buildParks, PARKS_SOURCE } from "../src/parks.js";
+import { buildMarkets, MARKETS_SOURCE } from "../src/markets.js";
 
 const GTFS_URLS = [
   "https://rrgtfsfeeds.s3.amazonaws.com/gtfs_subway.zip",
@@ -265,6 +267,26 @@ async function main() {
     console.log(`    Central Park: ${cp ? `${cp.properties.acres} acres, ${cp.properties.nearby.length} nearby stops, in ${cp.properties.neighborhood || "?"}` : "not found"}`);
     const rp = parks.geojson.features.find((f) => f.properties.name === "Riverside Park");
     console.log(`    Riverside Park passes through: ${rp ? rp.properties.areaIds.join(", ") : "not found"}`);
+  }
+
+  // ---- Farmers markets ------------------------------------------------------
+  const markets = await buildMarkets(
+    stationFeatures.map((f) => ({ id: f.properties.id, coords: f.geometry.coordinates as [number, number] })),
+    areas?.neighborhoodAt,
+    areas?.subNeighborhoodAt,
+  );
+  if (markets) {
+    writeJson("markets.geojson", markets.geojson);
+    const kb = Math.round(JSON.stringify(markets.geojson).length / 1024);
+    const m = markets.summary;
+    console.log(`  Wrote ${m.kept} of ${m.total} farmers markets${m.year ? ` (${m.year} list)` : ""} (${kb} KB) from ${MARKETS_SOURCE}`);
+    console.log(`    Skipped: ${m.skipped || "none"}`);
+    console.log(`    Columns: ${m.columns}`);
+    console.log(`    Matched: ${m.matched}`);
+    console.log(`    Extra features: ${m.extraFlags || "none"}`);
+    console.log(`    With a known season: ${m.withSeason}/${m.kept}${m.unparsedDays ? ` · Days not understood: ${m.unparsedDays}` : ""}`);
+    const usq = markets.geojson.features.find((f) => /union square/i.test(f.properties.name));
+    console.log(`    Union Square: ${usq ? `${usq.properties.daysText} ${usq.properties.hours} · ${usq.properties.neighborhood || "?"} · ${usq.properties.nearby.length} nearby stops` : "not found"}`);
   }
 
   const ts = stationFeatures.find((f) => f.properties.id === "127");

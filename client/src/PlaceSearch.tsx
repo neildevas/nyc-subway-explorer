@@ -1,13 +1,14 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { Feature, MultiPolygon, Point } from "geojson";
 import { Bullet, routeSort } from "./Bullet";
-import type { AreaProps, ParkProps, Routes, StationProps } from "./types";
+import type { AreaProps, MarketProps, ParkProps, Routes, StationProps } from "./types";
 
 type Area = Feature<MultiPolygon, AreaProps>;
 type Park = Feature<MultiPolygon, ParkProps>;
 type Station = Feature<Point, StationProps>;
+type Market = Feature<Point, MarketProps>;
 
-export type PlaceKind = "neighborhood" | "sub" | "park" | "station" | "line" | "borough";
+export type PlaceKind = "neighborhood" | "sub" | "park" | "market" | "station" | "line" | "borough";
 
 /** What the user picked: the kind of thing and its id (a route id for lines, a name for boroughs). */
 export interface PlacePick { kind: PlaceKind; id: string }
@@ -38,7 +39,7 @@ function score(text: string, q: string) {
 }
 
 /** When two results match equally well, show the bigger kinds of place first. */
-const KIND_ORDER: PlaceKind[] = ["borough", "neighborhood", "line", "station", "park", "sub"];
+const KIND_ORDER: PlaceKind[] = ["borough", "neighborhood", "line", "station", "park", "market", "sub"];
 
 const ICONS = {
   area: (
@@ -46,6 +47,9 @@ const ICONS = {
   ),
   park: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 7h-3l4 6H6l4-6H7z" /><path d="M12 16v5" /></svg>
+  ),
+  market: (
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16l-1.5 9h-13z" /><path d="M8 10l3-6M16 10l-3-6" /></svg>
   ),
   borough: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z" /></svg>
@@ -56,11 +60,12 @@ const BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"];
 
 /**
  * One search box for everything clickable on the map: neighbourhoods and
- * sub-neighbourhoods, parks, subway stations and lines, and boroughs.
+ * sub-neighbourhoods, parks, farmers markets, subway stations and lines, and boroughs.
  */
-export function PlaceSearch({ areas, parks, stations, routes, routesAt, onPick }: {
+export function PlaceSearch({ areas, parks, markets = [], stations, routes, routesAt, onPick }: {
   areas: Area[];
   parks: Park[];
+  markets?: Market[];
   stations: Station[];
   routes: Routes;
   /** Lines that stop at a station (express variants folded), for its bullets */
@@ -103,6 +108,17 @@ export function PlaceSearch({ areas, parks, stations, routes, routesAt, onPick }
         icon: ICONS.park,
       });
     }
+    for (const { properties: p } of markets) {
+      out.push({
+        kind: "market",
+        id: p.id,
+        name: p.name,
+        aliases: [],
+        note: ["Farmers market", p.daysText].filter(Boolean).join(" · "),
+        meta: p.borough,
+        icon: ICONS.market,
+      });
+    }
     for (const s of stations) {
       const p = s.properties;
       out.push({
@@ -134,7 +150,7 @@ export function PlaceSearch({ areas, parks, stations, routes, routesAt, onPick }
       });
     }
     return out;
-  }, [areas, parks, stations, routes, routesAt]);
+  }, [areas, parks, markets, stations, routes, routesAt]);
 
   const results = useMemo(() => {
     const q = norm(query);
@@ -165,7 +181,7 @@ export function PlaceSearch({ areas, parks, stations, routes, routesAt, onPick }
     <div className="area-search">
       <input
         type="search"
-        placeholder="Search places, stops, parks, lines"
+        placeholder="Search places, stops, parks, markets"
         aria-label="Search the map"
         value={query}
         onChange={(e) => { setQuery(e.target.value); setActive(0); }}

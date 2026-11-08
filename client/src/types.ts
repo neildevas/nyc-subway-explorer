@@ -108,3 +108,35 @@ export interface ParkProps {
   nearby: { id: string; m: number }[];
 }
 export type Parks = FeatureCollection<MultiPolygon, ParkProps>;
+
+/** A farmers market (NYC Open Data, NYC Farmers Markets, from the Health Department). */
+export interface MarketProps {
+  id: string;
+  name: string;
+  address: string;
+  borough: string;
+  /** As written in the data, e.g. "Saturday" or "Wed & Sat" */
+  daysText: string;
+  /** Day numbers it runs (0 = Sunday); empty if the build couldn't read the text */
+  days: number[];
+  hours: string;
+  yearRound: boolean;
+  /** ["MM-DD", "MM-DD"] (may wrap over New Year), or null if unknown */
+  season: [string, string] | null;
+  seasonText: string;
+  ebt: boolean;
+  healthBucks: boolean;
+  /** Other features from the data, e.g. "Kids Activities" */
+  features: string[];
+  website: string;
+  phone: string;
+  /** Which yearly list this came from */
+  year: number | null;
+  areaId: string;
+  neighborhood: string;
+  subAreaId: string;
+  subNeighborhood: string;
+  /** Nearest subway stations: id and straight-line metres */
+  nearby: { id: string; m: number }[];
+}
+export type Markets = FeatureCollection<Point, MarketProps>;

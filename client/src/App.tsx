@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import mapboxgl, { type GeoJSONSource } from "mapbox-gl";
 import type { Feature, FeatureCollection, MultiPolygon, Point } from "geojson";
-import { fetchArrivals, fetchAreas, fetchParks, fetchRealtime, fetchStatic } from "./api";
+import { fetchArrivals, fetchAreas, fetchMarkets, fetchParks, fetchRealtime, fetchStatic } from "./api";
 import { loadVisited, pickRandom, saveVisited } from "./random";
 import { setAmbientFocus, startAmbientTrains } from "./ambient";
 import { Bullet, routeSort } from "./Bullet";
@@ -9,16 +9,19 @@ import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
+import { MarketPanel } from "./MarketPanel";
+import { addMarketLayers, marketStatus, setMarketsVisible, setSelectedMarket } from "./markets";
 import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
 import { addAreaLayers, areaBounds, boroughBounds, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
-import type { AreaProps, Areas, Arrival, Lines, ParkProps, Parks, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
+import type { AreaProps, Areas, Arrival, Lines, MarketProps, Markets, ParkProps, Parks, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 
 type Station = Feature<Point, StationProps>;
 type Area = Feature<MultiPolygon, AreaProps>;
 type Park = Feature<MultiPolygon, ParkProps>;
+type Market = Feature<Point, MarketProps>;
 type Expr = mapboxgl.ExpressionSpecification;
 const NYC: [number, number] = [-73.94, 40.72];
 const REALTIME_MS = 30_000;
@@ -48,8 +51,8 @@ const TRANSIT_LAYERS = ["lines", "lines-hit", "stations", "station-labels", "tra
  * (The key is versioned: bumping it resets everyone to the current defaults.)
  */
 const LAYERS_KEY = "standclear.layers.v2";
-const DEFAULT_LAYERS = { transit: true, areas: true, boroughs: false, parks: true };
-const loadLayerPrefs = (): { transit: boolean; areas: boolean; boroughs: boolean; parks: boolean } => {
+const DEFAULT_LAYERS = { transit: true, areas: true, boroughs: false, parks: true, markets: true };
+const loadLayerPrefs = (): typeof DEFAULT_LAYERS => {
   try { return { ...DEFAULT_LAYERS, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}") }; }
   catch { return DEFAULT_LAYERS; }
 };
@@ -100,6 +103,7 @@ export default function App() {
   const [showAreas, setShowAreas] = useState(() => loadLayerPrefs().areas);
   const [showBoroughs, setShowBoroughs] = useState(() => loadLayerPrefs().boroughs);
   const [showParks, setShowParks] = useState(() => loadLayerPrefs().parks);
+  const [showMarkets, setShowMarkets] = useState(() => loadLayerPrefs().markets);
   const [areas, setAreas] = useState<Areas | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   /**
@@ -108,8 +112,23 @@ export default function App() {
    */
   const [areaHover, setAreaHover] = useState<{ id: string; sub?: string; x: number; y: number } | null>(null);
   useEffect(() => {
-    try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas, boroughs: showBoroughs, parks: showParks })); } catch { /* storage unavailable */ }
-  }, [showTransit, showAreas, showBoroughs, showParks]);
+    try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas, boroughs: showBoroughs, parks: showParks, markets: showMarkets })); } catch { /* storage unavailable */ }
+  }, [showTransit, showAreas, showBoroughs, showParks, showMarkets]);
+
+  // ---- Farmers markets -------------------------------------------------------
+  const [markets, setMarkets] = useState<Markets | null>(null);
+  const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null);
+  const [marketHover, setMarketHover] = useState<{ id: string; x: number; y: number } | null>(null);
+  const marketsById = useMemo(() => new Map((markets?.features ?? []).map((f) => [f.properties.id, f as Market])), [markets]);
+  /** Markets in each neighbourhood and sub-neighbourhood */
+  const marketsByArea = useMemo(() => {
+    const byArea = new Map<string, Market[]>();
+    for (const f of (markets?.features ?? []) as Market[]) {
+      for (const id of [f.properties.areaId, f.properties.subAreaId]) if (id) byArea.set(id, [...(byArea.get(id) ?? []), f]);
+    }
+    return byArea;
+  }, [markets]);
+  const selectedMarket = selectedMarketId ? marketsById.get(selectedMarketId) ?? null : null;
 
   // ---- Parks -----------------------------------------------------------------
   const [parks, setParks] = useState<Parks | null>(null);
@@ -184,7 +203,8 @@ export default function App() {
   const selectArea = (id: string, toggle = true) => {
     if (!areasById.has(id)) return;
     setShowAreas(true);
-    setSelectedParkId(null); // one place card at a time: a neighbourhood or a park
+    setSelectedParkId(null); // one place card at a time: a neighbourhood, a park or a market
+    setSelectedMarketId(null);
     setSelectedAreaId((current) => (toggle && current === id ? null : id));
   };
   const selectAreaRef = useRef(selectArea);
@@ -194,10 +214,21 @@ export default function App() {
   const selectPark = (id: string, toggle = true) => {
     setShowParks(true);
     setSelectedAreaId(null);
+    setSelectedMarketId(null);
     setSelectedParkId((current) => (toggle && current === id ? null : id));
   };
   const selectParkRef = useRef(selectPark);
   selectParkRef.current = selectPark;
+
+  /** Select a farmers market (or deselect it if it's already selected). */
+  const selectMarket = (id: string, toggle = true) => {
+    setShowMarkets(true);
+    setSelectedAreaId(null);
+    setSelectedParkId(null);
+    setSelectedMarketId((current) => (toggle && current === id ? null : id));
+  };
+  const selectMarketRef = useRef(selectMarket);
+  selectMarketRef.current = selectMarket;
 
   const stationsById = useMemo(
     () => new Map((stations?.features ?? []).map((f) => [f.properties.id, f as Station])),
@@ -230,13 +261,14 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (selected) setSelected(null);
+      else if (selectedMarketId) setSelectedMarketId(null);
       else if (selectedParkId) setSelectedParkId(null);
       else if (selectedAreaId) setSelectedAreaId(null);
       else if (lineFilter) setLineFilter("");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, selectedParkId, selectedAreaId, lineFilter]);
+  }, [selected, selectedMarketId, selectedParkId, selectedAreaId, lineFilter]);
 
   // station id -> coordinates, for placing trains
   const coordsById = useMemo(() => {
@@ -303,11 +335,50 @@ export default function App() {
       } catch (e) {
         console.warn("parks unavailable (run npm run build:data)", e);
       }
+      // Farmers markets: dots above the lines and station dots, under station names.
+      try {
+        const marketData = await fetchMarkets();
+        addMarketLayers(m, marketData, "station-labels");
+        setMarkets(marketData);
+      } catch (e) {
+        console.warn("farmers markets unavailable (run npm run build:data)", e);
+      }
+    });
+
+    // ---- Market hover + click (a station under the cursor wins) -----------
+    const overMarket = (point: mapboxgl.Point) =>
+      !!m.getLayer("markets-dots") && m.getLayoutProperty("markets-dots", "visibility") !== "none" &&
+      m.queryRenderedFeatures(point, { layers: ["markets-dots"] }).length > 0;
+    const overStation = (point: mapboxgl.Point) =>
+      !!m.getLayer("stations") && m.queryRenderedFeatures(point, { layers: ["stations"] }).length > 0;
+    let hoveredMarket: string | null = null;
+    const setMarketHoverState = (id: string | null) => {
+      if (hoveredMarket === id) return;
+      if (hoveredMarket) m.setFeatureState({ source: "markets", id: hoveredMarket }, { hover: false });
+      if (id) m.setFeatureState({ source: "markets", id }, { hover: true });
+      hoveredMarket = id;
+    };
+    m.on("mousemove", "markets-dots", (e) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (!id || overStation(e.point)) { setMarketHoverState(null); setMarketHover(null); return; }
+      setMarketHoverState(id);
+      m.getCanvas().style.cursor = "pointer";
+      setMarketHover({ id, x: e.point.x, y: e.point.y });
+    });
+    m.on("mouseleave", "markets-dots", () => {
+      setMarketHoverState(null);
+      setMarketHover(null);
+      m.getCanvas().style.cursor = "";
+    });
+    m.on("click", "markets-dots", (e) => {
+      if (overStation(e.point)) return;
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (id) selectMarketRef.current(id);
     });
 
     // ---- Park hover + click (transit, when shown, wins) --------------------
     const overTransitForParks = (point: mapboxgl.Point) =>
-      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
+      overMarket(point) || m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
     let hoveredPark: string | null = null;
     const setParkHoverState = (id: string | null) => {
       if (hoveredPark === id) return;
@@ -339,7 +410,7 @@ export default function App() {
 
     // ---- Neighbourhood hover + click (transit, when shown, wins) ----------
     const overTransit = (point: mapboxgl.Point) =>
-      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
+      overMarket(point) || m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
     let hoveredArea: string | null = null;
     const setAreaHoverState = (id: string | null) => {
       if (hoveredArea === id) return;
@@ -416,6 +487,7 @@ export default function App() {
     m.on("mousemove", "lines-hit", (e) => {
       const routeId = e.features?.[0]?.properties?.routeId as string | undefined;
       if (!routeId) return;
+      if (overMarket(e.point) && !overStation(e.point)) { setHover(null); return; } // the market dot on top wins
       m.getCanvas().style.cursor = "pointer";
       setHover({ routeId, x: e.point.x, y: e.point.y });
     });
@@ -425,7 +497,7 @@ export default function App() {
     });
     m.on("click", "lines-hit", (e) => {
       // A click on a station sitting on the line is a station click, not a line click.
-      if (m.queryRenderedFeatures(e.point, { layers: ["stations"] }).length) return;
+      if (m.queryRenderedFeatures(e.point, { layers: ["stations"] }).length || overMarket(e.point)) return;
       const routeId = e.features?.[0]?.properties?.routeId as string | undefined;
       if (routeId) setLineFilter((current) => (current === routeId ? "" : routeId));
     });
@@ -491,6 +563,22 @@ export default function App() {
     const m = map.current;
     if (m && parks) setParkTypeFilter(m, visibleParkTypes);
   }, [visibleParkTypes, parks]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !markets) return;
+    setMarketsVisible(m, showMarkets);
+    if (!showMarkets) { setSelectedMarketId(null); setMarketHover(null); }
+  }, [showMarkets, markets]);
+
+  // Highlight the selected market and fly to it.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !markets) return;
+    setSelectedMarket(m, selectedMarketId);
+    const market = selectedMarketId ? marketsById.get(selectedMarketId) : null;
+    if (market) m.flyTo({ center: market.geometry.coordinates as [number, number], zoom: 15, speed: STOP_FLY_SPEED, essential: true, padding: panelPadding() });
+  }, [selectedMarketId, markets, marketsById]);
 
   // Highlight the selected park and fly to it, the same way as stops and neighbourhoods.
   useEffect(() => {
@@ -572,6 +660,7 @@ export default function App() {
     saveVisited(next, "stop");
     setSelectedAreaId(null); // so the panel opens on the stop, not a neighbourhood or park from earlier
     setSelectedParkId(null);
+    setSelectedMarketId(null);
     selectStation(pick.properties.id, [], false);
   };
   const rollNeighborhood = (boroughs: string[]) => {
@@ -615,6 +704,7 @@ export default function App() {
   const pickFromSearch = ({ kind, id }: PlacePick) => {
     if (kind === "neighborhood" || kind === "sub") selectArea(id, false);
     else if (kind === "park") selectPark(id, false);
+    else if (kind === "market") selectMarket(id, false);
     else if (kind === "station") { setShowTransit(true); selectStation(id, [], false); }
     else if (kind === "line") { setShowTransit(true); setLineFilter(id); }
     else if (kind === "borough") {
@@ -642,6 +732,7 @@ export default function App() {
           <PlaceSearch
             areas={(areas?.features ?? []) as Area[]}
             parks={(parks?.features ?? []) as Park[]}
+            markets={(markets?.features ?? []) as Market[]}
             stations={stations.features as Station[]}
             routes={routes}
             routesAt={routesAtStation}
@@ -717,6 +808,19 @@ export default function App() {
         </>
         )}
 
+        {selectedMarket && (
+          <MarketPanel
+            market={selectedMarket}
+            routes={routes}
+            stationsById={stationsById}
+            areaExists={(id) => areasById.has(id)}
+            selectedStationId={selected?.properties.id}
+            onSelectArea={(id) => selectArea(id, false)}
+            onSelectStation={(id) => { setShowTransit(true); selectStation(id); }}
+            onClose={() => setSelectedMarketId(null)}
+          />
+        )}
+
         {selectedPark && (
           <ParkPanel
             park={selectedPark}
@@ -735,6 +839,8 @@ export default function App() {
             area={selectedArea}
             parks={(parksByArea.get(selectedArea.properties.id) ?? []).filter((pk) => !visibleParkTypes || visibleParkTypes.includes(pk.properties.type))}
             onSelectPark={(id) => selectPark(id, false)}
+            markets={marketsByArea.get(selectedArea.properties.id) ?? []}
+            onSelectMarket={(id) => selectMarket(id, false)}
             parent={selectedArea.properties.parent ? areasById.get(selectedArea.properties.parent) ?? null : null}
             subs={(areas?.features as Area[] | undefined)?.filter((f) => f.properties.kind === "sub" && f.properties.parent === selectedArea.properties.id) ?? []}
             onSelectArea={(id) => selectArea(id, false)}
@@ -835,6 +941,7 @@ export default function App() {
           <a href="https://github.com/chriswhong/nyc-neighborhood-boundaries" target="_blank" rel="noreferrer">NYC Neighborhood Boundaries</a>{" "}
           (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>)
           {parks && <> · Parks: <a href="https://data.cityofnewyork.us/Recreation/Parks-Properties/enfh-gkve" target="_blank" rel="noreferrer">NYC Parks via NYC Open Data</a></>}
+          {markets && <> · Markets: <a href="https://data.cityofnewyork.us/Health/NYC-Farmers-Markets/8vwk-6iz2" target="_blank" rel="noreferrer">NYC Health via NYC Open Data</a></>}
         </footer>
       </aside>
 
@@ -865,7 +972,23 @@ export default function App() {
         );
       })()}
 
-      {parkHover && !hover && parksById.get(parkHover.id) && (() => {
+      {marketHover && marketsById.get(marketHover.id) && (() => {
+        const p = marketsById.get(marketHover.id)!.properties;
+        const flip = marketHover.x > window.innerWidth - 300;
+        return (
+          <div className={`line-card market-hover${flip ? " flip" : ""}`} style={{ left: marketHover.x, top: marketHover.y }}>
+            <div>
+              <strong>{p.name}</strong>
+              <span>
+                Farmers market · {marketStatus(p).label}
+                {selectedMarketId === p.id ? " · Click to close" : ""}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
+      {parkHover && !hover && !marketHover && parksById.get(parkHover.id) && (() => {
         const p = parksById.get(parkHover.id)!.properties;
         const flip = parkHover.x > window.innerWidth - 300;
         return (
@@ -881,7 +1004,7 @@ export default function App() {
         );
       })()}
 
-      {areaHover && !hover && !parkHover && areasById.get(areaHover.id) && (() => {
+      {areaHover && !hover && !parkHover && !marketHover && areasById.get(areaHover.id) && (() => {
         const a = areasById.get(areaHover.id)!.properties;
         const parent = a.kind === "sub" ? areasById.get(a.parent)?.properties : undefined;
         const flip = areaHover.x > window.innerWidth - 300;
@@ -904,12 +1027,15 @@ export default function App() {
         areas={showAreas}
         boroughs={showBoroughs}
         parks={showParks}
+        markets={showMarkets}
         areasAvailable={!!areas}
         parksAvailable={!!parks}
+        marketsAvailable={!!markets}
         onTransit={setShowTransit}
         onAreas={setShowAreas}
         onBoroughs={setShowBoroughs}
         onParks={setShowParks}
+        onMarkets={setShowMarkets}
       />
 
       <RandomPicker
