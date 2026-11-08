@@ -14,6 +14,16 @@ export const AREA_LAYERS = [
   "areas-selected-fill", "areas-selected-outline", "areas-labels", "areas-sub-labels",
 ] as const;
 
+/**
+ * From this zoom, sub-neighbourhoods (Yorkville, Hell's Kitchen…) show as their own
+ * areas on top of their neighbourhood and take hovers and clicks.
+ */
+export const SUB_ZOOM = 13;
+
+/** Sub-neighbourhood fill opacity: invisible below SUB_ZOOM (still queryable for hover names). */
+const subFillOpacity = (hover: number, normal: number | Expr): Expr =>
+  ["step", ["zoom"], 0, SUB_ZOOM, ["case", ["boolean", ["feature-state", "hover"], false], hover, normal]];
+
 /** Layers behind the Boroughs toggle. */
 export const BOROUGH_LAYERS = ["boroughs-fill", "boroughs-hover", "boroughs-labels"] as const;
 
@@ -123,23 +133,29 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     },
   }, beneath);
 
-  // Sub-neighbourhoods: an invisible fill (so hover can name them) and faint dashed outlines up close.
+  // Sub-neighbourhoods: from SUB_ZOOM, their own tinted areas with outlines, on top of
+  // their neighbourhood. The fill is always rendered (transparent when zoomed out) so
+  // hovering can still name the sub-neighbourhood you're over.
   m.addLayer({
     id: "areas-sub-hit",
     type: "fill",
     source: "areas",
     filter: isSub,
     layout: hidden,
-    paint: { "fill-color": "#000", "fill-opacity": 0 },
+    paint: { "fill-color": paletteColor, "fill-opacity": subFillOpacity(0.26, 0.1) },
   }, beneath);
   m.addLayer({
     id: "areas-sub-outline",
     type: "line",
     source: "areas",
     filter: isSub,
-    minzoom: 12.5,
+    minzoom: SUB_ZOOM,
     layout: { ...hidden, "line-join": "round" },
-    paint: { "line-color": "#8f8f8b", "line-opacity": 0.45, "line-width": 0.8, "line-dasharray": [2, 2] },
+    paint: {
+      "line-color": ["case", ["boolean", ["feature-state", "hover"], false], paletteColor, "#b5b5b1"],
+      "line-opacity": 0.6,
+      "line-width": ["interpolate", ["linear"], ["zoom"], SUB_ZOOM, 0.8, 16, 1.4],
+    },
   }, beneath);
 
   const selected = ["areas-selected-fill", "areas-selected-outline"];
@@ -182,15 +198,15 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     type: "symbol",
     source: "areas",
     filter: isSub,
-    minzoom: 13.5,
+    minzoom: SUB_ZOOM,
     layout: {
       ...hidden,
       "text-field": ["get", "name"],
-      "text-size": 11,
+      "text-size": ["interpolate", ["linear"], ["zoom"], SUB_ZOOM, 10.5, 16, 13],
       "text-max-width": 8,
       "text-font": ["DIN Pro Italic", "Arial Unicode MS Regular"],
     },
-    paint: { "text-color": "#9a9a96", "text-halo-color": "#0b0b0b", "text-halo-width": 1 },
+    paint: { "text-color": "#d0d0cc", "text-halo-color": "#0b0b0b", "text-halo-width": 1.2 },
   }, labelsBeneath);
 }
 
@@ -212,7 +228,8 @@ export function setBoroughHighlight(m: mapboxgl.Map, boroughs: string[]) {
     ? ["case", ["any", hovered, inBoroughs], paletteColor, "#8f8f8b"]
     : ["case", hovered, paletteColor, "#8f8f8b"]);
   m.setPaintProperty("areas-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
-  m.setPaintProperty("areas-sub-outline", "line-opacity", on ? ["case", inBoroughs, 0.45, 0.1] : 0.45);
+  m.setPaintProperty("areas-sub-outline", "line-opacity", on ? ["case", inBoroughs, 0.6, 0.12] : 0.6);
+  m.setPaintProperty("areas-sub-hit", "fill-opacity", subFillOpacity(0.26, on ? ["case", inBoroughs, 0.14, 0.02] : 0.1));
   m.setPaintProperty("areas-sub-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
   // Boroughs layer: highlighted boroughs stand out, the others fade.
   m.setPaintProperty("boroughs-fill", "fill-opacity", on ? ["case", inBoroughs, 0.2, 0.04] : 0.12);

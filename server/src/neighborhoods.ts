@@ -76,7 +76,7 @@ export async function loadNeighborhoods() {
     subNeighborhoodAt: (p: [number, number]) => subs.lookup(p, 0),
     /**
      * Both levels as one GeoJSON file. `stationsIn` gives the station ids inside
-     * a neighbourhood and the lines that stop there.
+     * a neighbourhood or sub-neighbourhood and the lines that stop there.
      */
     toGeoJson(stationsIn: (id: string) => { stations: string[]; routes: string[] }) {
       const top = main.toGeoJson((a, p) => ({
@@ -86,15 +86,14 @@ export async function loadNeighborhoods() {
         parent: "",
         ...stationsIn(a.id),
       }));
-      const inner = subs.toGeoJson((_, p) => {
+      const inner = subs.toGeoJson((a, p) => {
         const parentSlug = str((p.parent_neighborhoods as Props[] | undefined)?.[0]?.slug);
         return {
           kind: "sub" as const,
           ...details(p),
           includes: [] as string[],
           parent: idBySlug.get(parentSlug) ?? "",
-          stations: [] as string[],
-          routes: [] as string[],
+          ...stationsIn(a.id),
         };
       });
       return { type: "FeatureCollection" as const, features: [...top.features, ...inner.features] };

@@ -3,10 +3,19 @@ import { Bullet } from "./Bullet";
 import type { AreaProps, Routes, StationProps } from "./types";
 
 type Station = Feature<Point, StationProps>;
+type Area = Feature<MultiPolygon, AreaProps>;
 
-/** Side panel for a selected neighbourhood: what it is, the lines that stop there, and its stops. */
-export function AreaPanel({ area, routes, stationsById, focusedLine, selectedStationId, transitOn, onFocusLine, onSelectStation, onClose }: {
-  area: Feature<MultiPolygon, AreaProps>;
+/**
+ * Side panel for a selected neighbourhood or sub-neighbourhood: where it sits
+ * (Borough › Neighbourhood › Sub), what it is, what's inside it, and its lines and stops.
+ */
+export function AreaPanel({ area, parent, subs, onSelectArea, routes, stationsById, focusedLine, selectedStationId, transitOn, onFocusLine, onSelectStation, onClose }: {
+  area: Area;
+  /** The neighbourhood a sub-neighbourhood sits in (null for a neighbourhood) */
+  parent: Area | null;
+  /** Sub-neighbourhoods inside this neighbourhood */
+  subs: Area[];
+  onSelectArea: (id: string) => void;
   routes: Routes;
   stationsById: Map<string, Station>;
   focusedLine: string;
@@ -17,34 +26,55 @@ export function AreaPanel({ area, routes, stationsById, focusedLine, selectedSta
   onClose: () => void;
 }) {
   const p = area.properties;
+  const isSub = p.kind === "sub";
   const stops = p.stations
     .map((id) => stationsById.get(id))
     .filter((s): s is Station => !!s)
     .sort((a, b) => a.properties.name.localeCompare(b.properties.name, "en", { numeric: true }));
+  const sortedSubs = [...subs].sort((a, b) => a.properties.name.localeCompare(b.properties.name));
 
   return (
     <section className="card area-card">
       <div className="line-head">
         <div>
-          <p className="eyebrow">{p.borough}</p>
+          <nav className="crumbs" aria-label="Where this is">
+            <span>{p.borough}</span>
+            {parent && (
+              <>
+                <span aria-hidden>›</span>
+                <button className="crumb-link" onClick={() => onSelectArea(parent.properties.id)} title={`Show all of ${parent.properties.name}`}>
+                  {parent.properties.name}
+                </button>
+              </>
+            )}
+          </nav>
           <h2>{p.name}</h2>
         </div>
-        <button className="close" onClick={onClose} aria-label="Close neighborhood" title="Close (Esc)">×</button>
+        <button className="close" onClick={onClose} aria-label={`Close ${isSub ? "area" : "neighborhood"}`} title="Close (Esc)">×</button>
       </div>
 
       {p.alternateNames.length > 0 && (
         <p className="aka">Also called {p.alternateNames.join(", ")}</p>
       )}
       {p.summary && <p className="summary">{p.summary}</p>}
-      {p.includes.length > 0 && (
-        <p className="includes"><span className="muted">Includes</span> {p.includes.join(" · ")}</p>
+      {sortedSubs.length > 0 && (
+        <div className="includes">
+          <span className="muted">Includes</span>
+          <div className="chips">
+            {sortedSubs.map((s) => (
+              <button key={s.properties.id} className="chip" onClick={() => onSelectArea(s.properties.id)}>
+                {s.properties.name}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       {p.wikipedia && (
         <a className="link" href={p.wikipedia} target="_blank" rel="noreferrer">Read more on Wikipedia ↗</a>
       )}
 
       {stops.length === 0 ? (
-        <p className="muted">No subway stops in this neighborhood.</p>
+        <p className="muted">No subway stops in {p.name}.</p>
       ) : (
         <>
           <h3>Lines that stop here</h3>

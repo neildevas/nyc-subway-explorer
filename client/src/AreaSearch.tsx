@@ -5,12 +5,12 @@ import type { AreaProps } from "./types";
 type Area = Feature<MultiPolygon, AreaProps>;
 
 interface Result {
-  /** The neighbourhood to select (a sub-neighbourhood resolves to its parent) */
+  /** The neighbourhood or sub-neighbourhood to select */
   id: string;
   name: string;
   borough: string;
   stops: number;
-  /** Why it matched, when it wasn't the name itself: "Also called UES", "Yorkville is in Upper East Side" */
+  /** Extra context: "Also called UES", or "in Upper East Side" for a sub-neighbourhood */
   note?: string;
   score: number;
 }
@@ -45,8 +45,8 @@ export function AreaSearch({ areas, onSelect }: { areas: Area[]; onSelect: (id: 
       if (p.kind === "sub") {
         const parent = byId.get(p.parent);
         const s = score(p.name, q);
-        // Rank a sub-neighbourhood match just below a direct name match of the same strength.
-        if (parent && s) offer({ id: parent.id, name: parent.name, borough: parent.borough, stops: parent.stations.length, note: `${p.name} is in ${parent.name}`, score: s - 0.5 });
+        // Rank a sub-neighbourhood just below a neighbourhood match of the same strength.
+        if (s) offer({ id: p.id, name: p.name, borough: p.borough, stops: p.stations.length, note: parent ? `in ${parent.name}` : undefined, score: s - 0.5 });
         continue;
       }
       const base = { id: p.id, name: p.name, borough: p.borough, stops: p.stations.length };

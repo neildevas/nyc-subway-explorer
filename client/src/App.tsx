@@ -9,7 +9,7 @@ import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { AreaSearch } from "./AreaSearch";
-import { addAreaLayers, areaBounds, boroughBounds, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
+import { addAreaLayers, areaBounds, boroughBounds, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
 import type { AreaProps, Areas, Arrival, Lines, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
@@ -97,7 +97,10 @@ export default function App() {
   const [showBoroughs, setShowBoroughs] = useState(() => loadLayerPrefs().boroughs);
   const [areas, setAreas] = useState<Areas | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
-  /** Hovered neighbourhood, plus the sub-neighbourhood under the cursor if any (e.g. "Yorkville") */
+  /**
+   * Hovered area: a neighbourhood, or (zoomed in past SUB_ZOOM) a sub-neighbourhood.
+   * Zoomed out, `sub` names the sub-neighbourhood under the cursor as a hint.
+   */
   const [areaHover, setAreaHover] = useState<{ id: string; sub?: string; x: number; y: number } | null>(null);
   useEffect(() => {
     try { localStorage.setItem(LAYERS_KEY, JSON.stringify({ transit: showTransit, areas: showAreas, boroughs: showBoroughs })); } catch { /* storage unavailable */ }
@@ -231,6 +234,11 @@ export default function App() {
         }
         addAreaLayers(m, areaData, "lines", "stations");
         setAreas(areaData);
+        // Sub-neighbourhood stops come from a newer build (older ones left them all empty).
+        const subs = areaData.features.filter((f) => f.properties.kind === "sub");
+        if (subs.length && subs.every((f) => !f.properties.stations?.length)) {
+          setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
+        }
       } catch (e) {
         console.warn("neighborhoods unavailable", e);
       }
@@ -246,13 +254,21 @@ export default function App() {
       if (id) m.setFeatureState({ source: "areas", id }, { hover: true });
       hoveredArea = id;
     };
+    /** The sub-neighbourhood under the point, if any (they're queryable at every zoom). */
+    const subAt = (point: mapboxgl.Point) =>
+      m.queryRenderedFeatures(point, { layers: ["areas-sub-hit"] })[0]?.properties as { id: string; name: string } | undefined;
+    /** What a hover or click at this point targets: the sub-neighbourhood once zoomed in, else the neighbourhood. */
+    const areaTarget = (point: mapboxgl.Point, parentId: string) => {
+      const sub = subAt(point);
+      return sub && m.getZoom() >= SUB_ZOOM ? { id: sub.id } : { id: parentId, sub: sub?.name };
+    };
     m.on("mousemove", "areas-fill", (e) => {
-      const id = e.features?.[0]?.properties?.id as string | undefined;
-      if (!id || overTransit(e.point)) { setAreaHoverState(null); setAreaHover(null); return; }
-      setAreaHoverState(id);
+      const parentId = e.features?.[0]?.properties?.id as string | undefined;
+      if (!parentId || overTransit(e.point)) { setAreaHoverState(null); setAreaHover(null); return; }
+      const target = areaTarget(e.point, parentId);
+      setAreaHoverState(target.id);
       m.getCanvas().style.cursor = "pointer";
-      const sub = m.queryRenderedFeatures(e.point, { layers: ["areas-sub-hit"] })[0]?.properties?.name as string | undefined;
-      setAreaHover({ id, sub, x: e.point.x, y: e.point.y });
+      setAreaHover({ ...target, x: e.point.x, y: e.point.y });
     });
     m.on("mouseleave", "areas-fill", () => {
       setAreaHoverState(null);
@@ -261,8 +277,8 @@ export default function App() {
     });
     m.on("click", "areas-fill", (e) => {
       if (overTransit(e.point)) return;
-      const id = e.features?.[0]?.properties?.id as string | undefined;
-      if (id) selectAreaRef.current(id);
+      const parentId = e.features?.[0]?.properties?.id as string | undefined;
+      if (parentId) selectAreaRef.current(areaTarget(e.point, parentId).id);
     });
 
     // ---- Borough hover + click (Boroughs layer) ------------------------------
@@ -521,6 +537,9 @@ export default function App() {
         {selectedArea && (
           <AreaPanel
             area={selectedArea}
+            parent={selectedArea.properties.parent ? areasById.get(selectedArea.properties.parent) ?? null : null}
+            subs={(areas?.features as Area[] | undefined)?.filter((f) => f.properties.kind === "sub" && f.properties.parent === selectedArea.properties.id) ?? []}
+            onSelectArea={(id) => selectArea(id, false)}
             routes={routes}
             stationsById={stationsById}
             focusedLine={lineFilter}
@@ -563,7 +582,18 @@ export default function App() {
             <h2>{selected.properties.name}</h2>
             {selected.properties.neighborhood && (
               <p className="place">
-                {selected.properties.subNeighborhood && `${selected.properties.subNeighborhood} · `}
+                {selected.properties.subNeighborhood && (
+                  <>
+                    {selected.properties.subAreaId && areasById.has(selected.properties.subAreaId) ? (
+                      <button className="place-link" onClick={() => selectArea(selected.properties.subAreaId!, false)} title="Show this area">
+                        {selected.properties.subNeighborhood}
+                      </button>
+                    ) : (
+                      selected.properties.subNeighborhood
+                    )}
+                    {" · "}
+                  </>
+                )}
                 {selected.properties.areaId && areasById.has(selected.properties.areaId) ? (
                   <button className="place-link" onClick={() => selectArea(selected.properties.areaId!, false)} title="Show this neighborhood">
                     {selected.properties.neighborhood}
@@ -638,13 +668,14 @@ export default function App() {
 
       {areaHover && !hover && areasById.get(areaHover.id) && (() => {
         const a = areasById.get(areaHover.id)!.properties;
+        const parent = a.kind === "sub" ? areasById.get(a.parent)?.properties : undefined;
         const flip = areaHover.x > window.innerWidth - 300;
         return (
           <div className={`line-card area-hover${flip ? " flip" : ""}`} style={{ left: areaHover.x, top: areaHover.y }}>
             <div>
               <strong>{a.name}</strong>
               <span>
-                {areaHover.sub ? `${areaHover.sub} · ` : ""}
+                {parent ? `in ${parent.name} · ` : areaHover.sub ? `${areaHover.sub} · ` : ""}
                 {a.borough} · {a.stations.length === 0 ? "no subway stops" : `${a.stations.length} ${a.stations.length === 1 ? "stop" : "stops"}`}
                 {selectedAreaId === a.id ? " · Click to close" : ""}
               </span>

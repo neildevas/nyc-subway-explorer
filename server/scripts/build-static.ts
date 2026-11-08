@@ -203,6 +203,8 @@ async function main() {
           areaId: area?.id ?? "",
           /** Smaller named area inside the neighbourhood, e.g. "Yorkville" (often empty) */
           subNeighborhood: sub?.name ?? "",
+          /** Sub-neighbourhood id, matches an id in neighborhoods.geojson (often empty) */
+          subAreaId: sub?.id ?? "",
           colors: routeIds.map((r) => routeInfo.get(r)?.color ?? "#808183"),
         },
         geometry: { type: "Point" as const, coordinates: [round(Number(s.stop_lon)), round(Number(s.stop_lat))] },
@@ -221,8 +223,10 @@ async function main() {
     // Each neighbourhood with the stations inside it and the lines that stop there.
     const byArea = new Map<string, typeof stationFeatures>();
     for (const f of stationFeatures) {
-      if (!f.properties.areaId) continue;
-      byArea.set(f.properties.areaId, [...(byArea.get(f.properties.areaId) ?? []), f]);
+      // Each station counts toward its neighbourhood and, if it's in one, its sub-neighbourhood.
+      for (const id of [f.properties.areaId, f.properties.subAreaId]) {
+        if (id) byArea.set(id, [...(byArea.get(id) ?? []), f]);
+      }
     }
     const neighborhoods = areas.toGeoJson((id) => {
       const inside = byArea.get(id) ?? [];

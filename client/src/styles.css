@@ -429,8 +429,26 @@ footer { font-size: 11px; }
 /* Neighborhood details */
 .aka { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-style: italic; }
 .summary { margin: 10px 0 8px; font-size: 13px; line-height: 1.5; color: #d6d6d2; }
-.includes { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
-.includes .muted { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 4px; }
+.includes { display: grid; gap: 6px; margin: 0 0 10px; }
+.includes .muted { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* Breadcrumb above a neighborhood name: Borough › Neighborhood */
+.crumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.crumb-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.crumb-link:hover { color: var(--ink); text-decoration-color: var(--accent); }
 footer a { color: inherit; }
 
 /* ---- Neighborhood search --------------------------------------------------- */

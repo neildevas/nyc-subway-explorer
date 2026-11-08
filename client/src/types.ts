@@ -16,6 +16,8 @@ export interface StationProps {
   areaId?: string;
   /** Smaller named area inside the neighbourhood, e.g. "Yorkville" (often empty) */
   subNeighborhood?: string;
+  /** Sub-neighbourhood id, matching an id in neighborhoods.geojson (often empty) */
+  subAreaId?: string;
   colors: string[];
 }
 export type Stations = FeatureCollection<Point, StationProps>;
@@ -72,7 +74,7 @@ export interface AreaProps {
   includes: string[];
   /** For a sub-neighbourhood, the id of the neighbourhood it's in */
   parent: string;
-  /** Station ids inside the neighbourhood */
+  /** Station ids inside the neighbourhood (or sub-neighbourhood) */
   stations: string[];
   /** Lines that stop inside it */
   routes: string[];
