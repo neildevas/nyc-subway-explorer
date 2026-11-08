@@ -15,18 +15,27 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const mmdd = (d: Date) => `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const monthName = (md: string) => MONTHS[Number(md.slice(0, 2)) - 1] ?? "";
 
-/** Whether a date falls inside the season (true when the season is unknown). Handles seasons that wrap over New Year. */
+/**
+ * The city's list says whether a market is year-round but (in recent years) gives no
+ * dates for the seasonal ones. Those typically run from early summer to late fall,
+ * so that's assumed, and labelled as "usually".
+ */
+const ASSUMED_SEASON: [string, string] = ["06-01", "11-30"];
+const seasonOf = (p: MarketProps) => (p.yearRound ? null : p.season ?? ASSUMED_SEASON);
+
+/** Whether a date falls inside the season. Handles seasons that wrap over New Year. */
 function inSeason(p: MarketProps, d: Date) {
-  if (p.yearRound || !p.season) return true;
-  const [a, b] = p.season, t = mmdd(d);
+  const season = seasonOf(p);
+  if (!season) return true;
+  const [a, b] = season, t = mmdd(d);
   return a <= b ? t >= a && t <= b : t >= a || t <= b;
 }
 
-/** "Jun – Nov", "Year-round", or the data's own wording. */
+/** "Year-round", "Jun – Nov", or "Seasonal (usually Jun – Nov)" when the dates are assumed. */
 export function seasonLabel(p: MarketProps) {
   if (p.yearRound) return "Year-round";
   if (p.season) return `${monthName(p.season[0])} – ${monthName(p.season[1])}`;
-  return p.seasonText;
+  return `Seasonal (usually ${monthName(ASSUMED_SEASON[0])} – ${monthName(ASSUMED_SEASON[1])})`;
 }
 
 export type MarketState = "today" | "season" | "off" | "unknown";
@@ -39,12 +48,18 @@ export type MarketState = "today" | "season" | "off" | "unknown";
  *   unknown – the data doesn't say enough to tell
  */
 export function marketStatus(p: MarketProps, now = new Date()): { state: MarketState; label: string } {
+  const season = seasonOf(p);
   if (!inSeason(p, now)) {
-    return { state: "off", label: p.season ? `Out of season · back in ${monthName(p.season[0])}` : "Out of season" };
+    const back = season ? monthName(season[0]) : "";
+    return { state: "off", label: p.season ? `Out of season · back in ${back}` : `Seasonal · usually back in ${back}` };
   }
   if (!p.days.length) return { state: "unknown", label: p.daysText || "Days not listed" };
   const today = now.getDay();
-  if (p.days.includes(today)) return { state: "today", label: `Open today${p.hours ? ` · ${p.hours}` : ""}` };
+  if (p.days.includes(today)) {
+    // "1st and 3rd Friday" markets might not be on this week.
+    if (p.weekly === false) return { state: "season", label: `Some ${DAY_NAMES[today]}s · ${p.daysText}` };
+    return { state: "today", label: `Open today${p.hours ? ` · ${p.hours}` : ""}` };
+  }
   // The next market day that's still in season (within the coming week).
   for (let i = 1; i <= 7; i++) {
     const d = new Date(now);

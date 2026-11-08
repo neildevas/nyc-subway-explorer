@@ -41,10 +41,16 @@ const BOROUGHS: Record<string, string> = {
 };
 
 // ---- Days of the week -------------------------------------------------------
-const DAY_NAMES: [RegExp, number][] = [
-  [/^sun/, 0], [/^mon/, 1], [/^tue/, 2], [/^wed/, 3], [/^thu/, 4], [/^fri/, 5], [/^sat/, 6],
-];
-const dayIndex = (word: string) => DAY_NAMES.find(([re]) => re.test(word))?.[1] ?? -1;
+/**
+ * A word that names a day ("sat", "Tuesdays", even the data's "Tusday") → its number
+ * (0 = Sunday), or -1. Whole words only, so "month" isn't Monday and "the" isn't Thursday.
+ */
+const DAY_WORD = /^(sun(day)?|mon(day)?|tue(s(day)?)?|tusday|wed(nesday)?|thu(rs?(day)?)?|fri(day)?|sat(urday)?)$/;
+const DAY_PREFIX = ["su", "mo", "tu", "we", "th", "fr", "sa"];
+const dayIndex = (word: string) => {
+  const w = word.replace(/s$/, "");
+  return DAY_WORD.test(w) ? DAY_PREFIX.indexOf(w.slice(0, 2)) : -1;
+};
 
 /** "Wed & Sat", "Monday-Friday", "Tue, Thu, Sat", "Daily" → day numbers (0 = Sunday). */
 export function parseDays(text: string): number[] {
@@ -154,6 +160,14 @@ export async function buildMarkets(
   const latest = years.length ? Math.max(...years) : 0;
   const rows = latest ? raw.filter((r) => Number(str(get(r, C.year)).slice(0, 4)) === latest) : raw;
 
+  // When each market first shows up, across every year of the list.
+  const firstYear = new Map<string, number>();
+  for (const r of raw) {
+    const y = Number(str(get(r, C.year)).slice(0, 4));
+    const n = tidyName(str(get(r, C.name))).toLowerCase();
+    if (y > 2000 && n && !(firstYear.get(n)! <= y)) firstYear.set(n, y);
+  }
+
   // Any other yes/no column is a feature worth showing (kids' activities, compost, etc.).
   const used = new Set(Object.values(C).filter(Boolean));
   const extraFlags = [...keys.values()].filter((k) => {
@@ -161,7 +175,7 @@ export async function buildMarkets(
     const vals = rows.map((r) => str(r[k])).filter(Boolean);
     return vals.length > 0 && vals.every((v) => YES.test(v) || NO.test(v)) && vals.some((v) => YES.test(v));
   });
-  const flagLabel = (k: string) => titleCase(k.replace(/^(has|offers|distributes?|accepts?)_/i, "").replace(/[_-]+/g, " ").trim());
+  const flagLabel = (k: string) => /cooking/i.test(k) ? "Cooking demos" : titleCase(k.replace(/^(has|offers|distributes?|accepts?)_/i, "").replace(/[_-]+/g, " ").trim());
 
   const skipped = new Map<string, number>();
   const skip = (why: string) => skipped.set(why, (skipped.get(why) ?? 0) + 1);
@@ -185,10 +199,12 @@ export async function buildMarkets(
     const sub = subAreaAt?.(coords) ?? null;
 
     const daysText = str(get(r, C.days));
+    // "Friday (1st and 3rd of each month)" runs on some weeks only.
+    const weekly = !/\b\d(st|nd|rd|th)\b/i.test(daysText);
     const days = parseDays(daysText);
     if (daysText && !days.length) unparsedDays.add(daysText);
 
-    const yearRound = YES.test(str(get(r, C.yearRound))) || /year.?round/i.test(str(get(r, C.season)));
+    const yearRound = /^yes/i.test(str(get(r, C.yearRound))) || /year.?round/i.test(str(get(r, C.season)));
     let season: [string, string] | null = null;
     const s0 = monthDay(str(get(r, C.seasonStart))), s1 = monthDay(str(get(r, C.seasonEnd)));
     if (s0 && s1) season = [s0, s1];
@@ -222,6 +238,8 @@ export async function buildMarkets(
         daysText,
         /** Day numbers it runs (0 = Sunday); empty if the text couldn't be read */
         days,
+        /** False for markets that only run some weeks ("1st and 3rd Monday") */
+        weekly,
         hours: str(get(r, C.hours)),
         yearRound,
         /** ["MM-DD", "MM-DD"]; may wrap over New Year. Null if unknown. */
@@ -234,6 +252,8 @@ export async function buildMarkets(
         website: site && !/^https?:\/\//i.test(site) ? `https://${site}` : site,
         phone: str(get(r, C.phone)),
         year: latest || null,
+        /** First year this market name appears in the city's list */
+        since: firstYear.get(name.toLowerCase()) ?? null,
         areaId: area?.id ?? "",
         neighborhood: area?.name ?? "",
         subAreaId: sub?.id ?? "",

@@ -90,7 +90,12 @@ export function MarketPanel({ market, routes, stationsById, areaExists, selected
           ))}
         </ul>
       )}
-      {p.year && <p className="muted fine">From the city's {p.year} farmers market list. Check before you go.</p>}
+      {p.year && (
+        <p className="muted fine">
+          {p.since && p.since < p.year ? `On the city's list since ${p.since}. ` : ""}
+          From the {p.year} list{!p.yearRound && !p.season ? "; seasonal dates aren't published, so check before you go" : ". Check before you go"}.
+        </p>
+      )}
     </section>
   );
 }

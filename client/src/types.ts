@@ -119,6 +119,8 @@ export interface MarketProps {
   daysText: string;
   /** Day numbers it runs (0 = Sunday); empty if the build couldn't read the text */
   days: number[];
+  /** False for markets that only run some weeks ("1st and 3rd Monday"); older builds lack it */
+  weekly?: boolean;
   hours: string;
   yearRound: boolean;
   /** ["MM-DD", "MM-DD"] (may wrap over New Year), or null if unknown */
@@ -132,6 +134,8 @@ export interface MarketProps {
   phone: string;
   /** Which yearly list this came from */
   year: number | null;
+  /** First year this market appears in the city's list */
+  since?: number | null;
   areaId: string;
   neighborhood: string;
   subAreaId: string;
