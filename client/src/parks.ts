@@ -1,6 +1,7 @@
 /** Map layers for NYC parks: green fills, outlines, names by size, and a selected highlight. */
 import type mapboxgl from "mapbox-gl";
 import type { Parks } from "./types";
+import { T } from "./theme";
 
 type Expr = mapboxgl.ExpressionSpecification;
 
@@ -8,7 +9,7 @@ export const PARK_LAYERS = [
   "parks-fill", "parks-outline", "parks-selected", "parks-labels-large", "parks-labels-medium", "parks-labels-small",
 ] as const;
 
-const GREEN = "#4caf6a";
+const GREEN = T.parkGreen;
 
 /** Park types "Take me somewhere" can land on: places you'd plan a visit to (no traffic triangles). */
 export const DESTINATION_TYPES = new Set([
@@ -87,7 +88,7 @@ export function addParkLayers(m: mapboxgl.Map, data: Parks, beneath?: string, la
     source: "parks",
     filter: ["==", ["get", "id"], ""],
     layout: { "line-join": "round" },
-    paint: { "line-color": "#FFD600", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 3] },
+    paint: { "line-color": T.selectInk, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 3] },
   }, beneath);
 
   // Big parks are named from further out, small ones only up close.
@@ -109,7 +110,7 @@ export function addParkLayers(m: mapboxgl.Map, data: Parks, beneath?: string, la
         // Bigger parks win when labels collide.
         "symbol-sort-key": ["-", 0, ["get", "acres"]],
       },
-      paint: { "text-color": "#9be3ad", "text-halo-color": "#0b0b0b", "text-halo-width": 1.2 },
+      paint: { "text-color": T.parkLabel, "text-halo-color": T.halo, "text-halo-width": 1.4 },
     }, labelsBeneath);
   };
   label("parks-labels-large", 10, [">=", ["get", "acres"], 100], ["interpolate", ["linear"], ["zoom"], 10, 10, 14, 13]);

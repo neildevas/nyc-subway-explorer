@@ -5,6 +5,7 @@
  */
 import type mapboxgl from "mapbox-gl";
 import type { Areas } from "./types";
+import { AREA_PALETTE, BOROUGH_COLORS, T } from "./theme";
 
 type Expr = mapboxgl.ExpressionSpecification;
 
@@ -28,14 +29,7 @@ const subFillOpacity = (hover: number, normal: number | Expr): Expr =>
 export const BOROUGH_LAYERS = ["boroughs-fill", "boroughs-hover", "boroughs-labels"] as const;
 
 /** One colour per borough for the zoomed-out view (from the same palette as the neighbourhoods). */
-const BOROUGH_COLORS: Record<string, string> = {
-  Manhattan: "#fc8d62",
-  Brooklyn: "#8da0cb",
-  Queens: "#66c2a5",
-  Bronx: "#e78ac3",
-  "Staten Island": "#e5c494",
-};
-const boroughColor: Expr = ["match", ["get", "borough"], ...Object.entries(BOROUGH_COLORS).flat(), "#8f8f8b"] as Expr;
+const boroughColor: Expr = ["match", ["get", "borough"], ...Object.entries(BOROUGH_COLORS).flat(), T.areaLine] as Expr;
 
 /** Where each borough's name sits (hand-placed over its middle, clear of the water). */
 const BOROUGH_LABELS: [string, [number, number]][] = [
@@ -50,7 +44,7 @@ const BOROUGH_LABELS: [string, [number, number]][] = [
  * The source data's five fill colours (tan, orange, blue, pink, teal), assigned
  * so neighbouring areas never share one. Shown at low opacity on the dark map.
  */
-export const PALETTE = ["#e5c494", "#fc8d62", "#8da0cb", "#e78ac3", "#66c2a5"];
+export const PALETTE = AREA_PALETTE;
 const paletteColor: Expr = ["match", ["get", "color"], 0, PALETTE[0], 1, PALETTE[1], 2, PALETTE[2], 3, PALETTE[3], 4, PALETTE[4], PALETTE[0]];
 
 const isTop: Expr = ["==", ["get", "kind"], "neighborhood"];
@@ -108,7 +102,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
       "text-font": ["DIN Pro Bold", "Arial Unicode MS Bold"],
       "text-allow-overlap": true,
     },
-    paint: { "text-color": "#e8e8e4", "text-halo-color": "#0b0b0b", "text-halo-width": 1.5 },
+    paint: { "text-color": T.ink, "text-halo-color": T.halo, "text-halo-width": 1.6 },
   }, labelsBeneath);
 
   // ---- Neighbourhoods
@@ -127,7 +121,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     filter: isTop,
     layout: { ...hidden, "line-join": "round" },
     paint: {
-      "line-color": ["case", hovered, paletteColor, "#8f8f8b"],
+      "line-color": ["case", hovered, paletteColor, T.areaLine],
       "line-opacity": ["case", hovered, 0.9, 0.5],
       "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.5, 13, 1, 16, 1.5],
     },
@@ -152,7 +146,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     minzoom: SUB_ZOOM,
     layout: { ...hidden, "line-join": "round" },
     paint: {
-      "line-color": ["case", ["boolean", ["feature-state", "hover"], false], paletteColor, "#b5b5b1"],
+      "line-color": ["case", ["boolean", ["feature-state", "hover"], false], paletteColor, T.subLine],
       "line-opacity": 0.6,
       "line-width": ["interpolate", ["linear"], ["zoom"], SUB_ZOOM, 0.8, 16, 1.4],
     },
@@ -165,7 +159,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     source: "areas",
     filter: ["==", ["get", "id"], ""],
     layout: hidden,
-    paint: { "fill-color": "#FFD600", "fill-opacity": 0.08 },
+    paint: { "fill-color": T.select, "fill-opacity": 0.12 },
   }, beneath);
   m.addLayer({
     id: selected[1],
@@ -173,7 +167,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     source: "areas",
     filter: ["==", ["get", "id"], ""],
     layout: { ...hidden, "line-join": "round" },
-    paint: { "line-color": "#FFD600", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 2.5] },
+    paint: { "line-color": T.selectInk, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 2.5] },
   }, beneath);
 
   m.addLayer({
@@ -191,7 +185,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
       "text-max-width": 8,
       "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
     },
-    paint: { "text-color": "#c4c4c0", "text-halo-color": "#0b0b0b", "text-halo-width": 1.2 },
+    paint: { "text-color": T.inkSoft, "text-halo-color": T.halo, "text-halo-width": 1.4 },
   }, labelsBeneath);
   m.addLayer({
     id: "areas-sub-labels",
@@ -206,7 +200,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
       "text-max-width": 8,
       "text-font": ["DIN Pro Italic", "Arial Unicode MS Regular"],
     },
-    paint: { "text-color": "#d0d0cc", "text-halo-color": "#0b0b0b", "text-halo-width": 1.2 },
+    paint: { "text-color": T.inkFaint, "text-halo-color": T.halo, "text-halo-width": 1.4 },
   }, labelsBeneath);
 }
 
@@ -225,8 +219,8 @@ export function setBoroughHighlight(m: mapboxgl.Map, boroughs: string[]) {
   m.setPaintProperty("areas-fill", "fill-opacity", pick(0.3, 0.24, 0.02, 0.08) as Expr);
   m.setPaintProperty("areas-outline", "line-opacity", pick(0.9, 0.75, 0.15, 0.5) as Expr);
   m.setPaintProperty("areas-outline", "line-color", on
-    ? ["case", ["any", hovered, inBoroughs], paletteColor, "#8f8f8b"]
-    : ["case", hovered, paletteColor, "#8f8f8b"]);
+    ? ["case", ["any", hovered, inBoroughs], paletteColor, T.areaLine]
+    : ["case", hovered, paletteColor, T.areaLine]);
   m.setPaintProperty("areas-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
   m.setPaintProperty("areas-sub-outline", "line-opacity", on ? ["case", inBoroughs, 0.6, 0.12] : 0.6);
   m.setPaintProperty("areas-sub-hit", "fill-opacity", subFillOpacity(0.26, on ? ["case", inBoroughs, 0.14, 0.02] : 0.1));

@@ -1,15 +1,22 @@
 :root {
-  --ink: #f4f4f2;
-  --muted: #9a9a96;
-  --panel: rgba(18, 18, 18, 0.92);
-  --line: #2b2b2b;
-  --accent: #ffd600;
+  /* Warm daylight: cream paper panels, dark ink, sunflower accents */
+  --ink: #33251a;
+  --muted: #7f6b57;
+  --panel: rgba(255, 251, 244, 0.95);
+  --panel-solid: #fffbf4;
+  --line: #e6dbc8;
+  --field: #fffdf8;
+  --hover: rgba(51, 37, 26, 0.06);
+  --shadow: rgba(70, 52, 25, 0.16);
+  --accent: #e3a72f;
+  /* Accent dark enough to read as text on cream */
+  --accent-ink: #a8452a; /* brick */
   font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   color: var(--ink);
 }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; background: #0b0b0b; }
+html, body, #root { margin: 0; height: 100%; background: #f2e9da; }
 
 .app { position: relative; height: 100%; }
 .map { position: absolute; inset: 0; }
@@ -32,9 +39,10 @@ html, body, #root { margin: 0; height: 100%; background: #0b0b0b; }
 }
 
 /* A nod to the MTA station signage band */
-.panel header { border-top: 6px solid #000; box-shadow: 0 -1px 0 #fff; padding-top: 12px; }
+.panel header { border-top: 6px solid #000; box-shadow: none; padding-top: 12px; }
 h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
-h2 { margin: 6px 0 2px; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+/* Place names in a soft, old-style serif: a little grand, a little bohemian */
+h2 { margin: 6px 0 2px; font-family: "Fraunces", Georgia, serif; font-size: 24px; font-weight: 600; letter-spacing: -0.005em; font-variation-settings: "SOFT" 50; }
 h3 { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .sub, .muted { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
 
@@ -43,7 +51,7 @@ h3 { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spac
   font: inherit;
   font-size: 14px;
   color: var(--ink);
-  background: #1e1e1e;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 8px;
@@ -63,7 +71,7 @@ h3 { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spac
   flex: none;
 }
 .bullet.small { width: 20px; height: 20px; font-size: 11px; }
-.link { color: var(--accent); font-size: 13px; text-decoration: none; }
+.link { color: var(--accent-ink); font-size: 13px; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 
 .arrivals { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -105,7 +113,7 @@ footer { font-size: 11px; }
   border-left: 4px solid; /* colour set inline to the route's colour */
   border-radius: 6px;
   transform: translate(16px, -50%);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 24px var(--shadow);
   animation: card-in 0.12s ease-out;
 }
 .line-card.flip { transform: translate(calc(-100% - 16px), -50%); }
@@ -120,7 +128,9 @@ footer { font-size: 11px; }
 /* ---- Line stop list (strip map) ---------------------------------------- */
 .line-head { display: flex; align-items: center; gap: 12px; }
 .line-head > div { flex: 1; min-width: 0; }
-.line-head h2 { margin: 0; font-size: 18px; line-height: 1.2; }
+.line-head h2 { margin: 0; font-size: 21px; line-height: 1.15; }
+/* Stations and lines keep the subway-sign sans; places get the serif */
+h2.sign { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-weight: 700; font-size: 20px; letter-spacing: -0.01em; font-variation-settings: normal; }
 .line-head .muted { margin: 2px 0 0; font-size: 12px; }
 .close {
   appearance: none;
@@ -133,7 +143,7 @@ footer { font-size: 11px; }
   cursor: pointer;
   border-radius: 4px;
 }
-.close:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+.close:hover { color: var(--ink); background: var(--hover); }
 
 .strip-scroll { max-height: 45vh; overflow-y: auto; margin: 12px -8px 0 0; padding-right: 8px; }
 .strip { list-style: none; margin: 0; padding: 0; }
@@ -163,10 +173,10 @@ footer { font-size: 11px; }
   margin-top: -5px;
   border-radius: 50%;
   background: var(--route);
-  box-shadow: 0 0 0 2px #121212;
+  box-shadow: 0 0 0 2px var(--panel-solid);
 }
-.strip li.transfer::after { left: 3px; width: 14px; height: 14px; margin-top: -7px; background: #fff; box-shadow: 0 0 0 2px #121212, inset 0 0 0 2px #121212; }
-.strip li.selected::after { box-shadow: 0 0 0 2px #121212, 0 0 0 5px var(--accent); }
+.strip li.transfer::after { left: 3px; width: 14px; height: 14px; margin-top: -7px; background: #fff; box-shadow: 0 0 0 2px var(--panel-solid), inset 0 0 0 2px var(--ink); }
+.strip li.selected::after { box-shadow: 0 0 0 2px var(--panel-solid), 0 0 0 5px var(--accent); }
 
 .strip button {
   appearance: none;
@@ -185,8 +195,8 @@ footer { font-size: 11px; }
   text-align: left;
   cursor: pointer;
 }
-.strip button:hover { background: rgba(255, 255, 255, 0.06); }
-.strip li.selected .stop-name { color: var(--accent); font-weight: 700; }
+.strip button:hover { background: var(--hover); }
+.strip li.selected .stop-name { color: var(--accent-ink); font-weight: 700; }
 .transfers { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; flex: none; max-width: 55%; }
 
 .branch h3 { margin: 14px 0 4px; }
@@ -228,7 +238,7 @@ footer { font-size: 11px; }
   align-items: center;
   gap: 10px;
   padding: 13px 20px 11px 14px;
-  border: 1px solid #2a2a2a;
+  border: 1px solid #000;
   border-radius: 6px;
   background: #000;
   color: #fff;
@@ -237,7 +247,7 @@ footer { font-size: 11px; }
   font-size: 16px;
   letter-spacing: -0.01em;
   cursor: pointer;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 28px var(--shadow);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 .dice-button::before {
@@ -250,10 +260,10 @@ footer { font-size: 11px; }
   background: #fff;
   opacity: 0.85;
 }
-.dice-button:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65); }
+.dice-button:hover { transform: translateY(-2px); box-shadow: 0 12px 32px var(--shadow); }
 .dice-button:active { transform: translateY(1px); }
-.dice-button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-.dice-button.open { box-shadow: 0 0 0 2px #fff, 0 8px 28px rgba(0, 0, 0, 0.6); }
+.dice-button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.dice-button.open { box-shadow: 0 0 0 2px var(--panel-solid), 0 0 0 4px var(--ink), 0 8px 28px var(--shadow); }
 .dice-button:disabled { opacity: 0.5; cursor: wait; }
 
 .die { width: 28px; height: 28px; flex: none; }
@@ -277,7 +287,7 @@ footer { font-size: 11px; }
   backdrop-filter: blur(8px);
   border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 36px var(--shadow);
   animation: picker-in 0.14s ease-out;
 }
 .picker-title { margin: 4px 8px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
@@ -289,14 +299,14 @@ footer { font-size: 11px; }
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 5px 11px;
-  background: #1a1a1a;
+  background: var(--field);
   color: var(--ink);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
   transition: background 0.1s ease, border-color 0.1s ease;
 }
-.chip:hover { border-color: #4a4a4a; }
+.chip:hover { border-color: #cbbda5; }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
 
 .picker-option {
@@ -314,7 +324,7 @@ footer { font-size: 11px; }
   text-align: left;
   cursor: pointer;
 }
-.picker-option:hover:not(:disabled), .picker-option:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.picker-option:hover:not(:disabled), .picker-option:focus-visible { background: var(--hover); outline: none; }
 .picker-option:disabled { opacity: 0.4; cursor: not-allowed; }
 .picker-option strong { display: block; font-size: 14px; }
 .picker-option .muted { display: block; margin: 2px 0 0; font-size: 12px; }
@@ -359,7 +369,7 @@ footer { font-size: 11px; }
   backdrop-filter: blur(8px);
   border: 1px solid var(--line);
   border-radius: 999px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 24px var(--shadow);
 }
 .layer-toggles button {
   appearance: none;
@@ -377,8 +387,8 @@ footer { font-size: 11px; }
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.layer-toggles button:hover:not(:disabled) { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
-.layer-toggles button.on { background: var(--ink); color: #0b0b0b; }
+.layer-toggles button:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
+.layer-toggles button.on { background: var(--ink); color: var(--panel-solid); }
 .layer-toggles button:disabled { opacity: 0.4; cursor: not-allowed; }
 .layer-toggles svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
 .layer-toggles svg .fill { fill: currentColor; stroke: none; }
@@ -404,8 +414,8 @@ footer { font-size: 11px; }
   text-align: left;
   cursor: pointer;
 }
-.area-stops button:hover { background: rgba(255, 255, 255, 0.06); }
-.area-stops li.selected .stop-name { color: var(--accent); font-weight: 700; }
+.area-stops button:hover { background: var(--hover); }
+.area-stops li.selected .stop-name { color: var(--accent-ink); font-weight: 700; }
 .bullet-button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 /* Neighborhood name on a station card links to the neighborhood */
@@ -417,18 +427,18 @@ footer { font-size: 11px; }
   color: inherit;
   font: inherit;
   text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: rgba(43, 36, 27, 0.3);
   text-underline-offset: 3px;
   cursor: pointer;
 }
 .place-link:hover { color: var(--ink); text-decoration-color: var(--accent); }
 
 /* Hover card for a neighborhood: same as the line card, neutral accent */
-.line-card.area-hover { border-left-color: #9a9a96; }
+.line-card.area-hover { border-left-color: #b9ab94; }
 
 /* Neighborhood details */
 .aka { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-style: italic; }
-.summary { margin: 10px 0 8px; font-size: 13px; line-height: 1.5; color: #d6d6d2; }
+.summary { margin: 10px 0 8px; font-size: 13px; line-height: 1.5; color: #4d3b2c; }
 .includes { display: grid; gap: 6px; margin: 0 0 10px; }
 .includes .muted { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
 
@@ -444,7 +454,7 @@ footer { font-size: 11px; }
   text-transform: inherit;
   letter-spacing: inherit;
   text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: rgba(43, 36, 27, 0.3);
   text-underline-offset: 3px;
   cursor: pointer;
 }
@@ -458,7 +468,7 @@ footer a { color: inherit; }
   font: inherit;
   font-size: 14px;
   color: var(--ink);
-  background: #1a1a1a;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 9px 10px 9px 32px;
@@ -468,7 +478,7 @@ footer a { color: inherit; }
   background-position: 9px center;
   background-size: 16px;
 }
-.area-search input:focus { outline: none; border-color: #5a5a5a; }
+.area-search input:focus { outline: none; border-color: #a8987e; }
 .area-search .suggestions {
   position: absolute;
   z-index: 5;
@@ -477,10 +487,10 @@ footer a { color: inherit; }
   list-style: none;
   margin: 4px 0 0;
   padding: 4px;
-  background: #1a1a1a;
+  background: var(--field);
   border: 1px solid var(--line);
   border-radius: 6px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 30px var(--shadow);
 }
 .area-search .suggestions button {
   appearance: none;
@@ -499,7 +509,7 @@ footer a { color: inherit; }
   text-align: left;
   cursor: pointer;
 }
-.area-search .suggestions button.active { background: rgba(255, 255, 255, 0.08); }
+.area-search .suggestions button.active { background: var(--hover); }
 .area-search .name { display: block; }
 .area-search .note { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
 .area-search .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
@@ -526,8 +536,8 @@ footer a { color: inherit; }
 
 /* ---- Park card ------------------------------------------------------------- */
 .park-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
-.park-facts span { padding: 3px 9px; border-radius: 999px; background: #1e2a21; color: #b9e8c4; font-size: 12px; }
-.park-facts .park-type { background: #2c5a37; color: #e6f7ea; font-weight: 600; }
+.park-facts span { padding: 3px 9px; border-radius: 999px; background: #e4f0d9; color: #2f6b34; font-size: 12px; }
+.park-facts .park-type { background: #5fae5f; color: #fff; font-weight: 600; }
 .walk { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
 
 /* Parks listed in a neighborhood panel */
@@ -549,12 +559,12 @@ footer a { color: inherit; }
   text-align: left;
   cursor: pointer;
 }
-.area-parks button:hover { background: rgba(255, 255, 255, 0.06); }
+.area-parks button:hover { background: var(--hover); }
 .area-parks .muted { margin: 0; font-size: 11px; white-space: nowrap; }
-.line-card.park-hover { border-left-color: #4caf6a; }
+.line-card.park-hover { border-left-color: #5fae5f; }
 
 /* Park type filter chips: green when on, with a count */
-.chip.park-chip.on { background: #4caf6a; border-color: #4caf6a; color: #08130b; }
+.chip.park-chip.on { background: #5fae5f; border-color: #5fae5f; color: #fff; }
 .chip-count { margin-left: 4px; font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; }
 
 /* ---- Map search results: icon, name + context, right-hand meta ------------ */
@@ -563,6 +573,6 @@ footer a { color: inherit; }
 .area-search .result-text .name, .area-search .result-text .note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
 .result-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
-.result-icon.kind-park { color: #4caf6a; }
-.station-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px #121212, 0 0 0 3px #555; }
+.result-icon.kind-park { color: #3f8f45; }
+.station-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--ink); }
 .result-bullets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; max-width: 110px; }

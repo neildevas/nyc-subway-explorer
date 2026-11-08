@@ -9,6 +9,7 @@ import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
+import { applyBasemapTheme, BASEMAP_STYLE, T } from "./theme";
 import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
 import { addAreaLayers, areaBounds, boroughBounds, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
@@ -30,6 +31,13 @@ const lineWidth = (focused: Expr | boolean = false): Expr => {
   return ["interpolate", ["linear"], ["zoom"], 9, w(2, 3.5), 12, w(2.5, 4), 14, w(4, 6), 17, w(8, 11)] as Expr;
 };
 
+/** The lines' outline: a little wider than the line itself, at every zoom. */
+const casingWidth = (focused: Expr | boolean = false): Expr => {
+  const w = (normal: number, raised: number): Expr | number =>
+    focused === false ? normal : ["case", focused as Expr, raised, normal];
+  return ["interpolate", ["linear"], ["zoom"], 9, w(3.5, 5.5), 12, w(4.5, 6.5), 14, w(6.5, 9), 17, w(11, 15)] as Expr;
+};
+
 /**
  * Sideways offset for parallel routes: slot × (width + gap). The ≥1 px gap keeps
  * parallel colours from antialiasing into each other when zoomed out.
@@ -41,7 +49,7 @@ const lineOffset = [
 ] as Expr;
 
 /** Every map layer that belongs to the Transit toggle. */
-const TRANSIT_LAYERS = ["lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
+const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
 
 /**
  * Which layers are switched on, remembered between visits. Both start on.
@@ -252,7 +260,7 @@ export default function App() {
 
     const m = new mapboxgl.Map({
       container: mapEl.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: BASEMAP_STYLE,
       center: NYC,
       zoom: 10.6,
       minZoom: 9,
@@ -263,6 +271,7 @@ export default function App() {
     m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
 
     m.on("load", async () => {
+      applyBasemapTheme(m);
       try {
         const [lines, stationsData, routesData] = await fetchStatic();
         if (lines.features.length && typeof lines.features[0].properties?.slot !== "number") {
@@ -285,7 +294,7 @@ export default function App() {
         if (areaData.features.length && !areaData.features[0].properties?.kind) {
           setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
         } else {
-          addAreaLayers(m, areaData, "lines", "stations");
+          addAreaLayers(m, areaData, "lines-casing", "stations");
           setAreas(areaData);
           if (subs.length && subs.every((f) => !f.properties.stations?.length)) {
             setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
@@ -298,7 +307,7 @@ export default function App() {
       // (and still under the subway lines).
       try {
         const parkData = await fetchParks();
-        addParkLayers(m, parkData, "lines", "stations");
+        addParkLayers(m, parkData, "lines-casing", "stations");
         setParks(parkData);
       } catch (e) {
         console.warn("parks unavailable (run npm run build:data)", e);
@@ -533,6 +542,8 @@ export default function App() {
     if (!m?.getLayer("lines")) return;
     const isFocus: Expr = ["==", ["get", "routeId"], focusRoute];
     m.setPaintProperty("lines", "line-opacity", focusRoute ? ["case", isFocus, 1, 0.15] : 1);
+    m.setPaintProperty("lines-casing", "line-opacity", focusRoute ? ["case", isFocus, 0.95, 0] : 0.95);
+    m.setPaintProperty("lines-casing", "line-width", casingWidth(focusRoute ? isFocus : false));
     m.setPaintProperty("lines", "line-width", focusRoute ? lineWidth(isFocus) : lineWidth());
     // Draw the focused route last so it sits on top of its neighbours.
     m.setLayoutProperty("lines", "line-sort-key", focusRoute ? ["case", isFocus, 1, 0] : 0);
@@ -777,7 +788,7 @@ export default function App() {
               </div>
               <button className="close" onClick={() => setSelected(null)} aria-label="Close stop" title="Close (Esc)">×</button>
             </div>
-            <h2>{selected.properties.name}</h2>
+            <h2 className="sign">{selected.properties.name}</h2>
             {selected.properties.neighborhood && (
               <p className="place">
                 {selected.properties.subNeighborhood && (
@@ -964,7 +975,7 @@ function LineStops({ route, routes, stationsById, selectedId, onSelect, onClose 
       <div className="line-head">
         <Bullet route={route} id={route.id} />
         <div>
-          <h2>{route.longName || `${route.name} train`}</h2>
+          <h2 className="sign">{route.longName || `${route.name} train`}</h2>
           <p className="muted">{route.stops ? `${total} stops` : "Run npm run build:data to load stops"}</p>
         </div>
         <button className="close" onClick={onClose} aria-label="Close line">×</button>
@@ -1046,6 +1057,21 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
   // borough and street names stay readable on top of them.
   const beforeLabels = firstLabelLayer(m);
 
+  // A paper-coloured outline under the lines, so even pale lines (N/Q/R/W, G, shuttles)
+  // stand out from the cream basemap.
+  m.addLayer({
+    id: "lines-casing",
+    type: "line",
+    source: "lines",
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: {
+      "line-color": T.halo,
+      "line-width": casingWidth(),
+      "line-offset": lineOffset,
+      "line-opacity": 0.95,
+    },
+  }, beforeLabels);
+
   m.addLayer({
     id: "lines",
     type: "line",
@@ -1083,8 +1109,8 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
     minzoom: DETAIL_FROM,
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], DETAIL_FROM, 2.5, 14, 5, 17, 9],
-      "circle-color": "#ffffff",
-      "circle-stroke-color": "#111111",
+      "circle-color": T.stationFill,
+      "circle-stroke-color": T.stationStroke,
       "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], DETAIL_FROM, 0.75, 14, 1.5],
       "circle-opacity": fadeIn(),
       "circle-stroke-opacity": fadeIn(),
@@ -1103,7 +1129,7 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
       "text-anchor": "top",
       "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
     },
-    paint: { "text-color": "#e8e8e8", "text-halo-color": "#000", "text-halo-width": 1.2 },
+    paint: { "text-color": T.ink, "text-halo-color": T.halo, "text-halo-width": 1.5 },
   });
 
   m.addLayer({
@@ -1142,8 +1168,8 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
     source: "selected",
     paint: {
       "circle-radius": 16,
-      "circle-color": "rgba(255, 214, 0, 0.18)",
-      "circle-stroke-color": "#FFD600",
+      "circle-color": "rgba(242, 169, 0, 0.22)",
+      "circle-stroke-color": T.selectInk,
       "circle-stroke-width": 3,
     },
   });

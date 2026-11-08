@@ -11,6 +11,7 @@ import type mapboxgl from "mapbox-gl";
 import type { GeoJSONSource } from "mapbox-gl";
 import type { Feature, FeatureCollection, Point } from "geojson";
 import type { Lines } from "./types";
+import { T } from "./theme";
 
 type LonLat = [number, number];
 type Expr = mapboxgl.ExpressionSpecification;
@@ -94,11 +95,11 @@ export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientO
     source: SOURCE,
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 2, 12, 2.5, 14, 3.5, 17, 5],
-      "circle-color": "#b9b9b5",
-      "circle-stroke-color": "#0b0b0b",
+      "circle-color": T.ambient,
+      "circle-stroke-color": T.halo,
       "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 9, 0.5, 14, 1],
       "circle-opacity": ["*", ["get", "alpha"], 0.9],
-      "circle-stroke-opacity": ["*", ["get", "alpha"], 0.6],
+      "circle-stroke-opacity": ["*", ["get", "alpha"], 0.9],
       "circle-pitch-alignment": "map",
     },
   }, opts.beforeId);
