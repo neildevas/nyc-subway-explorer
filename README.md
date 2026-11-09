@@ -34,6 +34,22 @@ cp .env.example .env.local   # paste your Mapbox public token (pk.…)
 npm run dev                  # http://localhost:5173
 ```
 
+## Deploy (Render, free)
+
+The repo includes a `render.yaml` [Blueprint](https://render.com/docs/blueprint-spec): one free web
+service that downloads the data, builds the client, and serves both from the Express server.
+
+1. On [Render](https://dashboard.render.com), choose **New → Blueprint** and connect this repo.
+2. When asked, paste your Mapbox public token as `VITE_MAPBOX_TOKEN`.
+3. Deploy. The first build takes a few minutes (it downloads the MTA GTFS and NYC Open Data).
+4. In your Mapbox account, restrict the token to your `*.onrender.com` URL.
+
+Free services sleep after 15 minutes without visitors, so the first visit after that takes about a
+minute to wake up. Pushes to the connected branch redeploy automatically.
+
+To try the production setup locally: `cd client && npm run build`, then `cd ../server && npm start`
+and open http://localhost:8787.
+
 ## How it works
 
 - **Lines** – the network is split into station-to-station segments (`server/src/segments.ts`). Each route's
