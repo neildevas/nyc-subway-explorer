@@ -1,0 +1,23 @@
+# Render Blueprint: one free web service that builds the data and the client, then
+# serves both from the Express server. https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: stand-clear
+    runtime: node
+    plan: free
+    region: virginia # closest to NYC and the MTA's feeds
+    # Downloads the MTA / neighbourhood / parks data, then builds the client.
+    # --include=dev because the build uses tsx, TypeScript and Vite.
+    buildCommand: >-
+      cd server && npm ci --include=dev && npm run build:data &&
+      cd ../client && npm ci --include=dev && npm run build
+    startCommand: cd server && npm start
+    healthCheckPath: /api/health
+    autoDeploy: true # redeploy on every push to the connected branch
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Your Mapbox public token (pk.…). Render asks for it when you create the service.
+      # It's baked into the client at build time, so restrict it to your Render URL in Mapbox.
+      - key: VITE_MAPBOX_TOKEN
+        sync: false
