@@ -5,8 +5,6 @@
  *   brownstone – "warm daylight explorer": limestone land, brownstone buildings, leafy
  *                parks, brown-black ink, an eclectic painted-row-house palette.
  *   signage    – the subway's own look: black, white, Helvetica, and the MTA line colours.
- *   mosaic     – the old IRT station mosaics: white tile, cobalt name tablets with tan
- *                borders, celadon and terracotta trim, names set in Cinzel (see mosaic.ts).
  *
  * `T` always holds the current theme's colours; layers read it when they're styled.
  */
@@ -119,39 +117,6 @@ export const THEMES = {
       // A/C/E blue, B/D/F/M orange, 4/5/6 green, 7 purple, N/Q/R/W yellow
       areaPalette: ["#0062CF", "#FF6319", "#00933C", "#B933AD", "#FCCC0A"],
       boroughs: { Manhattan: "#EE352E", Brooklyn: "#FF6319", Queens: "#B933AD", Bronx: "#00933C", "Staten Island": "#0062CF" },
-    },
-  },
-  mosaic: {
-    label: "Mosaic",
-    colors: {
-      page: "#efece4",
-      land: "#f4f1e9", // glazed white tile
-      water: "#9cc4c4", // celadon
-      waterLabel: "#2f6264",
-      park: "#c7ddc0",
-      building: "#e9e2d1",
-      buildingEdge: "#d8cdb5",
-      road: "#ffffff",
-      roadCasing: "#ddd2b8",
-      roadMinor: "#fbf9f4",
-      boundary: "#c8b88f",
-      ink: "#1f2b57", // cobalt-navy ink
-      inkSoft: "#3c4670",
-      inkFaint: "#7b7a70",
-      halo: "#fbf9f3",
-      select: "#d9b45a", // ochre tile
-      selectInk: "#2c4596",
-      stationFill: "#ffffff",
-      stationStroke: "#2c4596",
-      ambient: "#6e4a30", // umber
-      parkGreen: "#5f9e7a",
-      parkLabel: "#2f6b4c",
-      areaLine: "#cbb88a",
-      subLine: "#d8c9a4",
-      areaFill: [0.09, 0.24],
-      // Cobalt, celadon, terracotta, ochre, plum: the trim colours of the station mosaics
-      areaPalette: ["#2c4596", "#4f9a7a", "#b65a44", "#d9b45a", "#7a5a9a"],
-      boroughs: { Manhattan: "#2c4596", Brooklyn: "#b65a44", Queens: "#4f9a7a", Bronx: "#d9b45a", "Staten Island": "#7a5a9a" },
     },
   },
 } satisfies Record<string, { label: string; colors: Colors }>;

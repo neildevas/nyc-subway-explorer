@@ -12,7 +12,7 @@ type Expr = mapboxgl.ExpressionSpecification;
 /** Layers behind the Neighborhoods toggle. */
 export const AREA_LAYERS = [
   "areas-fill", "areas-outline", "areas-sub-hit", "areas-sub-outline",
-  "areas-selected-fill", "areas-selected-outline", "areas-labels", "areas-sub-labels", "areas-plaques",
+  "areas-selected-fill", "areas-selected-outline", "areas-labels", "areas-sub-labels",
 ] as const;
 
 /**
@@ -26,7 +26,7 @@ const subFillOpacity = (hover: number, normal: number | Expr): Expr =>
   ["step", ["zoom"], 0, SUB_ZOOM, ["case", ["boolean", ["feature-state", "hover"], false], hover, normal]];
 
 /** Layers behind the Boroughs toggle. */
-export const BOROUGH_LAYERS = ["boroughs-fill", "boroughs-hover", "boroughs-labels", "boroughs-plaques"] as const;
+export const BOROUGH_LAYERS = ["boroughs-fill", "boroughs-hover", "boroughs-labels"] as const;
 
 /** One colour per borough for the zoomed-out view (from the current theme). */
 const boroughColor = (): Expr => ["match", ["get", "borough"], ...Object.entries(T.boroughs).flat(), T.areaLine] as Expr;
@@ -224,14 +224,12 @@ export function setBoroughHighlight(m: mapboxgl.Map, boroughs: string[]) {
     ? ["case", ["any", hovered, inBoroughs], paletteColor(), T.areaLine]
     : ["case", hovered, paletteColor(), T.areaLine]);
   m.setPaintProperty("areas-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
-  if (m.getLayer("areas-plaques")) m.setPaintProperty("areas-plaques", "icon-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
   m.setPaintProperty("areas-sub-outline", "line-opacity", on ? ["case", inBoroughs, 0.6, 0.12] : 0.6);
   m.setPaintProperty("areas-sub-hit", "fill-opacity", subFillOpacity(0.26, on ? ["case", inBoroughs, 0.14, 0.02] : 0.1));
   m.setPaintProperty("areas-sub-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
   // Boroughs layer: highlighted boroughs stand out, the others fade.
   m.setPaintProperty("boroughs-fill", "fill-opacity", on ? ["case", inBoroughs, 0.2, 0.04] : 0.12);
   m.setPaintProperty("boroughs-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.4] : 1);
-  if (m.getLayer("boroughs-plaques")) m.setPaintProperty("boroughs-plaques", "icon-opacity", on ? ["case", inBoroughs, 1, 0.4] : 1);
 }
 
 /**

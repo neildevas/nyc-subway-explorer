@@ -9,7 +9,6 @@ import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
-import { addPlaqueLayers, installPlaques, plaqueFontReady, setPlaques } from "./mosaic";
 import { applyBasemapTheme, BASEMAP_STYLE, currentTheme, setTheme, T, THEME_NAMES, THEMES, type ThemeName } from "./theme";
 import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, restyleParks, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
@@ -31,15 +30,6 @@ const lineWidth = (focused: Expr | boolean = false): Expr => {
     focused === false ? normal : ["case", focused as Expr, raised, normal];
   return ["interpolate", ["linear"], ["zoom"], 9, w(2, 3.5), 12, w(2.5, 4), 14, w(4, 6), 17, w(8, 11)] as Expr;
 };
-
-/**
- * Mosaic names are tiled tablets drawn in Cinzel; every other theme uses plain map text.
- * The font has to finish loading before the first tablet is drawn.
- */
-function syncPlaques(m: mapboxgl.Map) {
-  if (currentTheme !== "mosaic") { setPlaques(m, false); return; }
-  plaqueFontReady().then(() => { if (currentTheme === "mosaic") setPlaques(m, true); });
-}
 
 /** Re-apply the current theme's colours to the transit layers. */
 function restyleTransit(m: mapboxgl.Map) {
@@ -76,7 +66,7 @@ const AMBIENT_DEFAULT = 15;
 const AMBIENT_STEP = 5;
 const AMBIENT_MAX = 60;
 
-const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected", "station-plaques"];
+const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
 
 /**
  * Which layers are switched on, remembered between visits. Both start on.
@@ -144,7 +134,6 @@ export default function App() {
     restyleAreas(m);
     restyleParks(m);
     restyleAmbient(m);
-    syncPlaques(m);
   }, [theme]);
 
   // ---- Decorative gray trains: how many are running (remembered) -----------
@@ -336,9 +325,6 @@ export default function App() {
         setRoutes(routesData);
         addLayers(m, lines, stationsData);
         // Above station dots (so a waiting train isn't hidden), below station names.
-        installPlaques(m);
-        addPlaqueLayers(m);
-        syncPlaques(m);
         ambient.current = startAmbientTrains(m, lines, { count: ambientCountRef.current, laneSpacing: LANE_SPACING, beforeId: "station-labels" });
       } catch (e) {
         setError((e as Error).message);
@@ -353,8 +339,6 @@ export default function App() {
           setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
         } else {
           addAreaLayers(m, areaData, "lines-casing", "stations");
-          addPlaqueLayers(m);
-          syncPlaques(m);
           setAreas(areaData);
           if (subs.length && subs.every((f) => !f.properties.stations?.length)) {
             setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
