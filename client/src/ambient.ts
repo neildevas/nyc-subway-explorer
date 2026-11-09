@@ -61,8 +61,15 @@ const KX = 111_320 * Math.cos((40.7 * Math.PI) / 180);
 const KY = 110_540;
 const FADE_S = 0.8;
 
-export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientOptions): () => void {
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return () => {};
+export interface AmbientTrains {
+  /** Change how many trains are running: new ones fade in, removed ones fade out. */
+  setCount: (n: number) => void;
+  stop: () => void;
+}
+const NOOP: AmbientTrains = { setCount: () => {}, stop: () => {} };
+
+export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientOptions): AmbientTrains {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return NOOP;
   const { count = 15, pxPerSec = 11, dwellS = [0.4, 0.9], laneSpacing } = opts;
 
   // ---- Index segments by route + station so trains can follow a route ----
@@ -84,7 +91,7 @@ export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientO
       atStation.set(k, [...(atStation.get(k) ?? []), seg]);
     }
   }
-  if (!segments.length) return () => {};
+  if (!segments.length) return NOOP;
 
   // ---- Layer: a small, quiet gray dot -------------------------------------
   const empty: FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -112,7 +119,9 @@ export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientO
     return { seg, forward: Math.random() < 0.5, dist: Math.random() * seg.length * 0.6, dwell: 0, hopsLeft: 2 + rand(5), age: 0 };
   };
   // Stagger the first ones so they don't all appear together.
-  let runners = Array.from({ length: count }, () => ({ ...spawn(), age: -Math.random() * 5 }));
+  let runners: Runner[] = Array.from({ length: count }, () => ({ ...spawn(), age: -Math.random() * 5 }));
+  /** Trains that were removed, fading out where they stand */
+  let leaving: (Runner & { fade: number })[] = [];
 
   const metresPerPixel = () => (78_271.517 * Math.cos((40.7 * Math.PI) / 180)) / 2 ** m.getZoom();
 
@@ -182,6 +191,16 @@ export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientO
     const lane = spacingPx() * mpp;
 
     const features: Feature<Point>[] = [];
+    // Removed trains fade out in place.
+    leaving = leaving.filter((r) => (r.fade -= dt) > 0);
+    for (const r of leaving) {
+      const along = r.forward ? r.dist : r.seg.length - r.dist;
+      features.push({
+        type: "Feature",
+        properties: { routeId: r.seg.routeId, alpha: r.fade / FADE_S },
+        geometry: { type: "Point", coordinates: pointAt(r.seg, along, r.seg.slot * lane) },
+      });
+    }
     runners = runners.map((r) => {
       r.age += dt;
       if (r.age <= 0) return r; // still waiting to start
@@ -206,7 +225,27 @@ export function startAmbientTrains(m: mapboxgl.Map, lines: Lines, opts: AmbientO
   };
   frame = requestAnimationFrame(tick);
 
-  return () => cancelAnimationFrame(frame);
+  return {
+    setCount(n: number) {
+      n = Math.max(0, Math.round(n));
+      if (n > runners.length) {
+        // New trains start straight away (fading in), on random segments.
+        runners = [...runners, ...Array.from({ length: n - runners.length }, spawn)];
+      } else if (n < runners.length) {
+        const removed = runners.slice(n).filter((r) => r.age > 0);
+        leaving = [...leaving, ...removed.map((r) => ({ ...r, fade: FADE_S * Math.min(1, r.age / FADE_S) }))];
+        runners = runners.slice(0, n);
+      }
+    },
+    stop: () => cancelAnimationFrame(frame),
+  };
+}
+
+/** Re-apply the current theme's colours to the decorative trains. */
+export function restyleAmbient(m: mapboxgl.Map) {
+  if (!m.getLayer(LAYER)) return;
+  m.setPaintProperty(LAYER, "circle-color", T.ambient);
+  m.setPaintProperty(LAYER, "circle-stroke-color", T.halo);
 }
 
 /** Dim trains on other lines when a route is focused, matching the lines layer. */

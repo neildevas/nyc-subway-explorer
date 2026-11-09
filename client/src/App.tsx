@@ -3,16 +3,17 @@ import mapboxgl, { type GeoJSONSource } from "mapbox-gl";
 import type { Feature, FeatureCollection, MultiPolygon, Point } from "geojson";
 import { fetchArrivals, fetchAreas, fetchParks, fetchRealtime, fetchStatic } from "./api";
 import { loadVisited, pickRandom, saveVisited } from "./random";
-import { setAmbientFocus, startAmbientTrains } from "./ambient";
+import { type AmbientTrains, restyleAmbient, setAmbientFocus, startAmbientTrains } from "./ambient";
 import { Bullet, routeSort } from "./Bullet";
 import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
-import { applyBasemapTheme, BASEMAP_STYLE, T } from "./theme";
-import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
+import { addPlaqueLayers, installPlaques, plaqueFontReady, setPlaques } from "./mosaic";
+import { applyBasemapTheme, BASEMAP_STYLE, currentTheme, setTheme, T, THEME_NAMES, THEMES, type ThemeName } from "./theme";
+import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, restyleParks, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
-import { addAreaLayers, areaBounds, boroughBounds, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
+import { addAreaLayers, areaBounds, boroughBounds, restyleAreas, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
 import type { AreaProps, Areas, Arrival, Lines, ParkProps, Parks, RouteInfo, Routes, StationProps, Stations, Train } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
@@ -30,6 +31,26 @@ const lineWidth = (focused: Expr | boolean = false): Expr => {
     focused === false ? normal : ["case", focused as Expr, raised, normal];
   return ["interpolate", ["linear"], ["zoom"], 9, w(2, 3.5), 12, w(2.5, 4), 14, w(4, 6), 17, w(8, 11)] as Expr;
 };
+
+/**
+ * Mosaic names are tiled tablets drawn in Cinzel; every other theme uses plain map text.
+ * The font has to finish loading before the first tablet is drawn.
+ */
+function syncPlaques(m: mapboxgl.Map) {
+  if (currentTheme !== "mosaic") { setPlaques(m, false); return; }
+  plaqueFontReady().then(() => { if (currentTheme === "mosaic") setPlaques(m, true); });
+}
+
+/** Re-apply the current theme's colours to the transit layers. */
+function restyleTransit(m: mapboxgl.Map) {
+  m.setPaintProperty("lines-casing", "line-color", T.halo);
+  m.setPaintProperty("stations", "circle-color", T.stationFill);
+  m.setPaintProperty("stations", "circle-stroke-color", T.stationStroke);
+  m.setPaintProperty("station-labels", "text-color", T.ink);
+  m.setPaintProperty("station-labels", "text-halo-color", T.halo);
+  m.setPaintProperty("selected", "circle-color", T.select);
+  m.setPaintProperty("selected", "circle-stroke-color", T.selectInk);
+}
 
 /** The lines' outline: a little wider than the line itself, at every zoom. */
 const casingWidth = (focused: Expr | boolean = false): Expr => {
@@ -49,7 +70,13 @@ const lineOffset = [
 ] as Expr;
 
 /** Every map layer that belongs to the Transit toggle. */
-const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
+/** Decorative gray trains: default, step and limit for the + / − buttons */
+const AMBIENT_KEY = "standclear.ambientTrains";
+const AMBIENT_DEFAULT = 15;
+const AMBIENT_STEP = 5;
+const AMBIENT_MAX = 60;
+
+const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected", "station-plaques"];
 
 /**
  * Which layers are switched on, remembered between visits. Both start on.
@@ -105,6 +132,35 @@ export default function App() {
 
   // Map layers: Transit and Neighborhoods, toggled independently.
   const [showTransit, setShowTransit] = useState(() => loadLayerPrefs().transit);
+
+  // ---- Theme: recolour the map in place (no reload) and swap the CSS variables ----
+  const [theme, setThemeState] = useState<ThemeName>(currentTheme);
+  const changeTheme = (name: ThemeName) => { setTheme(name); setThemeState(name); };
+  useEffect(() => {
+    const m = map.current;
+    if (!m?.getLayer("lines")) return; // first load styles itself
+    applyBasemapTheme(m);
+    restyleTransit(m);
+    restyleAreas(m);
+    restyleParks(m);
+    restyleAmbient(m);
+    syncPlaques(m);
+  }, [theme]);
+
+  // ---- Decorative gray trains: how many are running (remembered) -----------
+  const [ambientCount, setAmbientCount] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem(AMBIENT_KEY));
+      return localStorage.getItem(AMBIENT_KEY) !== null && Number.isFinite(n) ? Math.min(AMBIENT_MAX, Math.max(0, n)) : AMBIENT_DEFAULT;
+    } catch { return AMBIENT_DEFAULT; }
+  });
+  const ambient = useRef<AmbientTrains | null>(null);
+  const ambientCountRef = useRef(ambientCount);
+  ambientCountRef.current = ambientCount;
+  useEffect(() => {
+    ambient.current?.setCount(ambientCount);
+    try { localStorage.setItem(AMBIENT_KEY, String(ambientCount)); } catch { /* storage unavailable */ }
+  }, [ambientCount]);
   const [showAreas, setShowAreas] = useState(() => loadLayerPrefs().areas);
   const [showBoroughs, setShowBoroughs] = useState(() => loadLayerPrefs().boroughs);
   const [showParks, setShowParks] = useState(() => loadLayerPrefs().parks);
@@ -267,7 +323,6 @@ export default function App() {
       maxBounds: [[-74.6, 40.35], [-73.4, 41.1]],
     });
     map.current = m;
-    let stopAmbient = () => {};
     m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
 
     m.on("load", async () => {
@@ -281,7 +336,10 @@ export default function App() {
         setRoutes(routesData);
         addLayers(m, lines, stationsData);
         // Above station dots (so a waiting train isn't hidden), below station names.
-        stopAmbient = startAmbientTrains(m, lines, { laneSpacing: LANE_SPACING, beforeId: "station-labels" });
+        installPlaques(m);
+        addPlaqueLayers(m);
+        syncPlaques(m);
+        ambient.current = startAmbientTrains(m, lines, { count: ambientCountRef.current, laneSpacing: LANE_SPACING, beforeId: "station-labels" });
       } catch (e) {
         setError((e as Error).message);
         return;
@@ -295,6 +353,8 @@ export default function App() {
           setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
         } else {
           addAreaLayers(m, areaData, "lines-casing", "stations");
+          addPlaqueLayers(m);
+          syncPlaques(m);
           setAreas(areaData);
           if (subs.length && subs.every((f) => !f.properties.stations?.length)) {
             setError("Neighborhood data is out of date. Run `npm run build:data` in /server, then reload.");
@@ -439,7 +499,7 @@ export default function App() {
       if (routeId) setLineFilter((current) => (current === routeId ? "" : routeId));
     });
 
-    return () => { stopAmbient(); m.remove(); map.current = null; };
+    return () => { ambient.current?.stop(); ambient.current = null; m.remove(); map.current = null; };
   }, []);
 
   // ---- Realtime trains -----------------------------------------------------
@@ -516,12 +576,12 @@ export default function App() {
   useEffect(() => {
     const m = map.current;
     if (!m || !areas) return;
-    setBoroughHighlight(m, highlightBoroughs);
+    setBoroughHighlight(m, highlightBoroughs); // also re-run on theme change: it sets outline colours
     if (!frameBoroughs.current) return;
     frameBoroughs.current = false;
     const bounds = highlightBoroughs.length ? boroughBounds(areas, highlightBoroughs) : null;
     if (bounds) m.fitBounds(bounds, { padding: panelPadding(), maxZoom: 13, duration: 800 });
-  }, [highlightBoroughs, areas]);
+  }, [highlightBoroughs, areas, theme]);
 
   // Highlight the selected neighbourhood and frame it on the map.
   useEffect(() => {
@@ -646,7 +706,25 @@ export default function App() {
       <aside className="panel">
         <header>
           <h1>Stand Clear</h1>
-          <p className="sub">Every line, stop and train in NYC's subway. Poke around.</p>
+          <p className="sub">
+            Live subway trains{areas ? ", the neighborhoods they run through" : ""}{parks ? (areas ? " and the parks in between" : " and the parks nearby") : ""}.
+            Search for anything, or hit “Take me somewhere” and go somewhere new.
+          </p>
+          <div className="theme-switch" role="radiogroup" aria-label="Map style">
+            {THEME_NAMES.map((name) => (
+              <button
+                key={name}
+                role="radio"
+                aria-checked={theme === name}
+                className={theme === name ? "on" : ""}
+                onClick={() => changeTheme(name)}
+                title={`${THEMES[name].label} style`}
+              >
+                <span className={`theme-swatch ${name}`} aria-hidden="true" />
+                {THEMES[name].label}
+              </button>
+            ))}
+          </div>
         </header>
 
         {stations && (
@@ -923,6 +1001,34 @@ export default function App() {
         onParks={setShowParks}
       />
 
+      {(() => {
+        // Labels that say what each press will do, or why it can't.
+        const fewer = Math.max(0, ambientCount - AMBIENT_STEP);
+        const more = Math.min(AMBIENT_MAX, ambientCount + AMBIENT_STEP);
+        const off = !showTransit;
+        const minusTitle = off ? "Turn on Transit to see the trains"
+          : ambientCount === 0 ? "No trains running"
+          : fewer === 0 ? "Stop all the trains" : `Remove ${ambientCount - fewer} trains (down to ${fewer})`;
+        const plusTitle = off ? "Turn on Transit to see the trains"
+          : ambientCount >= AMBIENT_MAX ? `That's the most (${AMBIENT_MAX})`
+          : `Add ${more - ambientCount} trains (up to ${more})`;
+        const label = ambientCount === 0 ? "No trains" : `${ambientCount} ${ambientCount === 1 ? "train" : "trains"}`;
+        return (
+          <div className={`ambient-control${off ? " off" : ""}`} role="group" aria-label="Decorative trains">
+            <button onClick={() => setAmbientCount(fewer)} disabled={off || ambientCount <= 0} aria-label={minusTitle} title={minusTitle}>−</button>
+            <span
+              aria-live="polite"
+              title="Decorative trains that drift along the lines for atmosphere. They aren't live: the real-time MTA trains are separate."
+            >
+              <span className="ambient-dot" aria-hidden="true" />
+              {label}
+              {ambientCount >= AMBIENT_MAX && <small>max</small>}
+            </span>
+            <button onClick={() => setAmbientCount(more)} disabled={off || ambientCount >= AMBIENT_MAX} aria-label={plusTitle} title={plusTitle}>+</button>
+          </div>
+        );
+      })()}
+
       <RandomPicker
         onPick={takeMeSomewhere}
         disabled={!stations}
@@ -1168,7 +1274,8 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
     source: "selected",
     paint: {
       "circle-radius": 16,
-      "circle-color": "rgba(242, 169, 0, 0.22)",
+      "circle-color": T.select,
+      "circle-opacity": 0.22,
       "circle-stroke-color": T.selectInk,
       "circle-stroke-width": 3,
     },

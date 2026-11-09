@@ -11,18 +11,27 @@
   --accent: #e3a72f;
   /* Accent dark enough to read as text on cream */
   --accent-ink: #a8452a; /* brick */
+  --page: #f2e9da;
+  --summary: #4d3b2c;
+  --park: #5fae5f;
+  --park-soft: #e4f0d9;
+  --park-text: #2f6b34;
+  --area-edge: #b9ab94;
+  --ambient: #6f5a47;
+  --heading-font: "Fraunces", Georgia, serif;
   font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   color: var(--ink);
 }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; background: #f2e9da; }
+html, body, #root { margin: 0; height: 100%; background: var(--page); }
 
 .app { position: relative; height: 100%; }
 .map { position: absolute; inset: 0; }
 
 .panel {
   position: absolute;
+  z-index: 2;
   top: 16px;
   left: 16px;
   width: 340px;
@@ -42,7 +51,7 @@ html, body, #root { margin: 0; height: 100%; background: #f2e9da; }
 .panel header { border-top: 6px solid #000; box-shadow: none; padding-top: 12px; }
 h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
 /* Place names in a soft, old-style serif: a little grand, a little bohemian */
-h2 { margin: 6px 0 2px; font-family: "Fraunces", Georgia, serif; font-size: 24px; font-weight: 600; letter-spacing: -0.005em; font-variation-settings: "SOFT" 50; }
+h2 { margin: 6px 0 2px; font-family: var(--heading-font); font-size: 24px; font-weight: 600; letter-spacing: -0.005em; font-variation-settings: "SOFT" 50; }
 h3 { margin: 16px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .sub, .muted { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
 
@@ -83,6 +92,7 @@ footer { font-size: 11px; }
 
 .error {
   position: absolute;
+  z-index: 4;
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
@@ -231,51 +241,41 @@ h2.sign { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-weig
   flex-direction: column;
   align-items: center;
 }
-/* Styled like an MTA station sign: black panel, white Helvetica, thin white rule near the top. */
-.dice-button {
+/* "Take me somewhere". Brownstone (the default): a brownstone-brown button with
+   cream serif lettering and a thin cornice line, like the door of a stoop. */
+.go-button {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 13px 20px 11px 14px;
-  border: 1px solid #000;
-  border-radius: 6px;
-  background: #000;
-  color: #fff;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  padding: 13px 22px 11px;
+  border: 1px solid #5a3424;
+  border-radius: 8px;
+  background: #7a4a33;
+  color: #fbf3e4;
+  font-family: var(--heading-font);
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: 0;
   cursor: pointer;
   box-shadow: 0 8px 28px var(--shadow);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
 }
-.dice-button::before {
+.go-button::before {
   content: "";
   position: absolute;
   top: 5px;
   left: 8px;
   right: 8px;
   height: 1px;
-  background: #fff;
-  opacity: 0.85;
+  background: #fbf3e4;
+  opacity: 0.45;
 }
-.dice-button:hover { transform: translateY(-2px); box-shadow: 0 12px 32px var(--shadow); }
-.dice-button:active { transform: translateY(1px); }
-.dice-button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-.dice-button.open { box-shadow: 0 0 0 2px var(--panel-solid), 0 0 0 4px var(--ink), 0 8px 28px var(--shadow); }
-.dice-button:disabled { opacity: 0.5; cursor: wait; }
+.go-button:hover { transform: translateY(-2px); background: #6b402c; box-shadow: 0 12px 32px var(--shadow); }
+.go-button:active { transform: translateY(1px); }
+.go-button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.go-button.open { box-shadow: 0 0 0 2px var(--panel-solid), 0 0 0 4px #7a4a33, 0 8px 28px var(--shadow); }
+.go-button:disabled { opacity: 0.5; cursor: wait; }
 
-.die { width: 28px; height: 28px; flex: none; }
-.die rect { stroke: none; transition: fill 0.08s linear; } /* fill: the face's line colour, set inline */
-.die circle { fill: #fff; }
-.dice-button.rolling .die { animation: tumble 0.45s cubic-bezier(0.3, 0.7, 0.4, 1); }
-
-@keyframes tumble {
-  0% { transform: rotate(0deg) scale(1); }
-  40% { transform: rotate(200deg) scale(1.2); }
-  100% { transform: rotate(360deg) scale(1); }
-}
 
 /* The choice card, floating just above the button */
 .picker-card {
@@ -346,7 +346,7 @@ h2.sign { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-weig
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dice-button.rolling .die, .picker-card { animation: none; }
+  .picker-card { animation: none; }
 }
 
 /* On phones the panel is a bottom sheet, so float the picker at the top instead
@@ -434,11 +434,11 @@ h2.sign { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-weig
 .place-link:hover { color: var(--ink); text-decoration-color: var(--accent); }
 
 /* Hover card for a neighborhood: same as the line card, neutral accent */
-.line-card.area-hover { border-left-color: #b9ab94; }
+.line-card.area-hover { border-left-color: var(--area-edge); }
 
 /* Neighborhood details */
 .aka { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-style: italic; }
-.summary { margin: 10px 0 8px; font-size: 13px; line-height: 1.5; color: #4d3b2c; }
+.summary { margin: 10px 0 8px; font-size: 13px; line-height: 1.5; color: var(--summary); }
 .includes { display: grid; gap: 6px; margin: 0 0 10px; }
 .includes .muted { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
 
@@ -536,8 +536,8 @@ footer a { color: inherit; }
 
 /* ---- Park card ------------------------------------------------------------- */
 .park-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
-.park-facts span { padding: 3px 9px; border-radius: 999px; background: #e4f0d9; color: #2f6b34; font-size: 12px; }
-.park-facts .park-type { background: #5fae5f; color: #fff; font-weight: 600; }
+.park-facts span { padding: 3px 9px; border-radius: 999px; background: var(--park-soft); color: var(--park-text); font-size: 12px; }
+.park-facts .park-type { background: var(--park); color: #fff; font-weight: 600; }
 .walk { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
 
 /* Parks listed in a neighborhood panel */
@@ -561,10 +561,10 @@ footer a { color: inherit; }
 }
 .area-parks button:hover { background: var(--hover); }
 .area-parks .muted { margin: 0; font-size: 11px; white-space: nowrap; }
-.line-card.park-hover { border-left-color: #5fae5f; }
+.line-card.park-hover { border-left-color: var(--park); }
 
 /* Park type filter chips: green when on, with a count */
-.chip.park-chip.on { background: #5fae5f; border-color: #5fae5f; color: #fff; }
+.chip.park-chip.on { background: var(--park); border-color: var(--park); color: #fff; }
 .chip-count { margin-left: 4px; font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; }
 
 /* ---- Map search results: icon, name + context, right-hand meta ------------ */
@@ -573,6 +573,207 @@ footer a { color: inherit; }
 .area-search .result-text .name, .area-search .result-text .note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; color: var(--muted); }
 .result-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
-.result-icon.kind-park { color: #3f8f45; }
+.result-icon.kind-park { color: var(--park-text); }
 .station-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--ink); }
 .result-bullets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; max-width: 110px; }
+
+/* ---- Decorative trains: + / − count, under the layer toggles ------------------ */
+.ambient-control {
+  position: absolute;
+  top: 66px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 6px 24px var(--shadow);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ambient-control > span { display: inline-flex; align-items: center; gap: 6px; min-width: 76px; padding: 0 2px; justify-content: center; font-variant-numeric: tabular-nums; cursor: help; white-space: nowrap; }
+.ambient-control small { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.ambient-control.off > span { color: var(--muted); }
+.ambient-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ambient); box-shadow: 0 0 0 1.5px var(--panel-solid); }
+.ambient-control button {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ambient-control button:hover:not(:disabled) { background: var(--hover); }
+.ambient-control button:disabled { opacity: 0.35; cursor: not-allowed; }
+@media (max-width: 600px) {
+  /* The picker sits under the layer toggles on phones, so go below it. */
+  .ambient-control { top: 124px; }
+}
+
+/* ---- Style switch, in the panel header ------------------------------------------ */
+.theme-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--field);
+}
+.theme-switch button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-switch button:hover { color: var(--ink); background: var(--hover); }
+.theme-switch button.on { background: var(--ink); color: var(--panel-solid); }
+/* A tiny preview of each style */
+.theme-swatch { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.5); }
+.theme-swatch.brownstone { background: linear-gradient(135deg, #f5eee2 0 45%, #d46a43 45% 65%, #7ea35f 65%); }
+.theme-swatch.signage { background: conic-gradient(#EE352E 0 25%, #00933C 0 50%, #0062CF 0 75%, #FCCC0A 0); box-shadow: 0 0 0 2px #000, 0 0 0 3px rgba(128, 128, 128, 0.6); }
+
+/* ---- Signage theme: the subway's own look -----------------------------------------
+   Black and white, Helvetica throughout, a white rule like the top of a station sign,
+   and the line colours for accents. */
+:root[data-theme="signage"] {
+  --ink: #ffffff;
+  --muted: #a3a3a3;
+  --panel: rgba(0, 0, 0, 0.93);
+  --panel-solid: #000000;
+  --line: #2e2e2e;
+  --field: #111111;
+  --hover: rgba(255, 255, 255, 0.08);
+  --shadow: rgba(0, 0, 0, 0.55);
+  --accent: #FCCC0A;
+  --accent-ink: #FCCC0A;
+  --page: #000000;
+  --summary: #d6d6d6;
+  --park: #00933C;
+  --park-soft: #0d2615;
+  --park-text: #6CBE45;
+  --area-edge: #8a8a8a;
+  --ambient: #A7A9AC;
+  --heading-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+:root[data-theme="signage"] h2 { font-weight: 700; letter-spacing: -0.01em; font-variation-settings: normal; }
+:root[data-theme="signage"] .panel header { border-top: 2px solid #fff; padding-top: 14px; }
+:root[data-theme="signage"] h1 { font-weight: 700; letter-spacing: -0.015em; }
+:root[data-theme="signage"] .chip:hover { border-color: #5a5a5a; }
+:root[data-theme="signage"] .chip.on { background: #fff; border-color: #fff; color: #000; }
+:root[data-theme="signage"] .area-search input:focus { border-color: #fff; }
+/* "Take me somewhere" as a station sign: black, white Helvetica, a white rule on top,
+   and a white edge so it stands out on the black map */
+:root[data-theme="signage"] .go-button {
+  border-color: #000;
+  border-radius: 6px;
+  background: #000;
+  color: #fff;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  box-shadow: 0 0 0 1.5px #fff, 0 8px 28px var(--shadow);
+}
+:root[data-theme="signage"] .go-button::before { background: #fff; opacity: 0.85; }
+:root[data-theme="signage"] .go-button:hover { background: #000; }
+:root[data-theme="signage"] .go-button.open { box-shadow: 0 0 0 1.5px #fff, 0 0 0 4px #FCCC0A, 0 8px 28px var(--shadow); }
+
+.theme-swatch.mosaic {
+  background-color: #2c4596;
+  background-image: linear-gradient(rgba(0, 0, 0, 0.25) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, 0.25) 1px, transparent 1px);
+  background-size: 4px 4px;
+  box-shadow: 0 0 0 2px #dcc794, 0 0 0 3px #6e4a30;
+}
+
+/* ---- Mosaic theme: the old IRT station tile work ---------------------------------
+   Cobalt name tablets with tan and umber borders, a multicoloured
+   tile band, celadon and terracotta trim, and Cinzel (a Roman capital face) for names. */
+:root[data-theme="mosaic"] {
+  --ink: #1f2b57;
+  --muted: #6f6c62;
+  --panel: rgba(250, 248, 242, 0.96);
+  --panel-solid: #faf8f2;
+  --line: #e1d9c6;
+  --field: #fffdf8;
+  --hover: rgba(31, 43, 87, 0.06);
+  --shadow: rgba(40, 45, 70, 0.18);
+  --accent: #d9b45a;
+  --accent-ink: #b65a44; /* terracotta */
+  --page: #efece4;
+  --summary: #3b3a35;
+  --park: #5f9e7a;
+  --park-soft: #e1efe6;
+  --park-text: #2f6b4c;
+  --area-edge: #cbb88a;
+  --ambient: #6e4a30;
+  --heading-font: "Cinzel", "Trajan Pro", Georgia, serif;
+  /* Tiles for reuse: a cobalt field with grout lines */
+  --tile-grout: linear-gradient(rgba(10, 12, 30, 0.28) 1px, transparent 1px), linear-gradient(90deg, rgba(10, 12, 30, 0.28) 1px, transparent 1px);
+}
+
+/* Header: a band of multicoloured tiles on top, then the title set as a tablet */
+:root[data-theme="mosaic"] .panel header { border-top: 0; padding-top: 0; }
+:root[data-theme="mosaic"] .panel header::before {
+  content: "";
+  display: block;
+  height: 8px;
+  margin: 0 0 16px;
+  background-image: var(--tile-grout),
+    repeating-linear-gradient(90deg, #4f9a7a 0 8px, #b65a44 8px 12px, #2c4596 12px 16px, #dcc794 16px 24px, #4f9a7a 24px 28px, #b65a44 28px 32px, #d9b45a 32px 36px, #4f9a7a 36px 44px);
+  background-size: 4px 4px, auto;
+}
+:root[data-theme="mosaic"] h1 {
+  display: inline-block;
+  padding: 8px 16px 6px;
+  font-family: var(--heading-font);
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f6f2e8;
+  background-color: #2c4596;
+  background-image: var(--tile-grout);
+  background-size: 5px 5px;
+  border: 5px solid #dcc794;
+  box-shadow: 0 0 0 2px #6e4a30, 0 0 0 8px #6fae8f, 0 0 0 9px rgba(110, 74, 48, 0.4);
+  margin: 9px;
+}
+:root[data-theme="mosaic"] h2 { color: #2c4596; font-weight: 700; letter-spacing: 0.03em; font-variation-settings: normal; }
+:root[data-theme="mosaic"] h2.sign { font-family: var(--heading-font); }
+:root[data-theme="mosaic"] .chip.on { background: #2c4596; border-color: #2c4596; color: #fff; }
+:root[data-theme="mosaic"] .theme-switch button.on { background: #2c4596; color: #fff; }
+/* "Take me somewhere" becomes a little tablet too */
+:root[data-theme="mosaic"] .go-button {
+  font-family: var(--heading-font);
+  letter-spacing: 0.05em;
+  background-color: #2c4596;
+  background-image: var(--tile-grout);
+  background-size: 5px 5px;
+  border: 4px solid #dcc794;
+  box-shadow: 0 0 0 2px #6e4a30, 0 8px 28px var(--shadow);
+}
+:root[data-theme="mosaic"] .go-button::before { display: none; }
+:root[data-theme="mosaic"] .go-button { color: #f6f2e8; font-size: 16px; }
+:root[data-theme="mosaic"] .go-button:hover { background-color: #2c4596; }
+:root[data-theme="mosaic"] .go-button.open { box-shadow: 0 0 0 2px #6e4a30, 0 0 0 5px #6fae8f, 0 8px 28px var(--shadow); }

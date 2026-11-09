@@ -9,7 +9,6 @@ export const PARK_LAYERS = [
   "parks-fill", "parks-outline", "parks-selected", "parks-labels-large", "parks-labels-medium", "parks-labels-small",
 ] as const;
 
-const GREEN = T.parkGreen;
 
 /** Park types "Take me somewhere" can land on: places you'd plan a visit to (no traffic triangles). */
 export const DESTINATION_TYPES = new Set([
@@ -68,7 +67,7 @@ export function addParkLayers(m: mapboxgl.Map, data: Parks, beneath?: string, la
     id: "parks-fill",
     type: "fill",
     source: "parks",
-    paint: { "fill-color": GREEN, "fill-opacity": ["case", hovered, 0.42, 0.22] },
+    paint: { "fill-color": T.parkGreen, "fill-opacity": ["case", hovered, 0.42, 0.22] },
   }, beneath);
   m.addLayer({
     id: "parks-outline",
@@ -77,7 +76,7 @@ export function addParkLayers(m: mapboxgl.Map, data: Parks, beneath?: string, la
     minzoom: 11,
     layout: { "line-join": "round" },
     paint: {
-      "line-color": GREEN,
+      "line-color": T.parkGreen,
       "line-opacity": ["case", hovered, 0.95, 0.55],
       "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.5, 15, 1.2],
     },
@@ -116,6 +115,18 @@ export function addParkLayers(m: mapboxgl.Map, data: Parks, beneath?: string, la
   label("parks-labels-large", 10, [">=", ["get", "acres"], 100], ["interpolate", ["linear"], ["zoom"], 10, 10, 14, 13]);
   label("parks-labels-medium", 12.5, ["all", [">=", ["get", "acres"], 5], ["<", ["get", "acres"], 100]], ["interpolate", ["linear"], ["zoom"], 12.5, 10, 15, 12]);
   label("parks-labels-small", 14.5, ["<", ["get", "acres"], 5], 10.5);
+}
+
+/** Re-apply the current theme's colours to the park layers. */
+export function restyleParks(m: mapboxgl.Map) {
+  if (!m.getLayer("parks-fill")) return;
+  m.setPaintProperty("parks-fill", "fill-color", T.parkGreen);
+  m.setPaintProperty("parks-outline", "line-color", T.parkGreen);
+  m.setPaintProperty("parks-selected", "line-color", T.selectInk);
+  for (const id of ["parks-labels-large", "parks-labels-medium", "parks-labels-small"]) {
+    m.setPaintProperty(id, "text-color", T.parkLabel);
+    m.setPaintProperty(id, "text-halo-color", T.halo);
+  }
 }
 
 export function setParksVisible(m: mapboxgl.Map, on: boolean) {

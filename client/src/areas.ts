@@ -5,14 +5,14 @@
  */
 import type mapboxgl from "mapbox-gl";
 import type { Areas } from "./types";
-import { AREA_PALETTE, BOROUGH_COLORS, T } from "./theme";
+import { T } from "./theme";
 
 type Expr = mapboxgl.ExpressionSpecification;
 
 /** Layers behind the Neighborhoods toggle. */
 export const AREA_LAYERS = [
   "areas-fill", "areas-outline", "areas-sub-hit", "areas-sub-outline",
-  "areas-selected-fill", "areas-selected-outline", "areas-labels", "areas-sub-labels",
+  "areas-selected-fill", "areas-selected-outline", "areas-labels", "areas-sub-labels", "areas-plaques",
 ] as const;
 
 /**
@@ -26,10 +26,10 @@ const subFillOpacity = (hover: number, normal: number | Expr): Expr =>
   ["step", ["zoom"], 0, SUB_ZOOM, ["case", ["boolean", ["feature-state", "hover"], false], hover, normal]];
 
 /** Layers behind the Boroughs toggle. */
-export const BOROUGH_LAYERS = ["boroughs-fill", "boroughs-hover", "boroughs-labels"] as const;
+export const BOROUGH_LAYERS = ["boroughs-fill", "boroughs-hover", "boroughs-labels", "boroughs-plaques"] as const;
 
-/** One colour per borough for the zoomed-out view (from the same palette as the neighbourhoods). */
-const boroughColor: Expr = ["match", ["get", "borough"], ...Object.entries(BOROUGH_COLORS).flat(), T.areaLine] as Expr;
+/** One colour per borough for the zoomed-out view (from the current theme). */
+const boroughColor = (): Expr => ["match", ["get", "borough"], ...Object.entries(T.boroughs).flat(), T.areaLine] as Expr;
 
 /** Where each borough's name sits (hand-placed over its middle, clear of the water). */
 const BOROUGH_LABELS: [string, [number, number]][] = [
@@ -41,11 +41,13 @@ const BOROUGH_LABELS: [string, [number, number]][] = [
 ];
 
 /**
- * The source data's five fill colours (tan, orange, blue, pink, teal), assigned
- * so neighbouring areas never share one. Shown at low opacity on the dark map.
+ * Each area's fill colour: the build gives every area a colour number 0–4, assigned so
+ * neighbours never share one, and the current theme's palette says what each number is.
  */
-export const PALETTE = AREA_PALETTE;
-const paletteColor: Expr = ["match", ["get", "color"], 0, PALETTE[0], 1, PALETTE[1], 2, PALETTE[2], 3, PALETTE[3], 4, PALETTE[4], PALETTE[0]];
+const paletteColor = (): Expr => {
+  const p = T.areaPalette;
+  return ["match", ["get", "color"], 0, p[0], 1, p[1], 2, p[2], 3, p[3], 4, p[4], p[0]];
+};
 
 const isTop: Expr = ["==", ["get", "kind"], "neighborhood"];
 const isSub: Expr = ["==", ["get", "kind"], "sub"];
@@ -72,7 +74,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     source: "areas",
     filter: isTop,
     layout: hidden,
-    paint: { "fill-color": boroughColor, "fill-opacity": 0.12, "fill-antialias": false },
+    paint: { "fill-color": boroughColor(), "fill-opacity": 0.12, "fill-antialias": false },
   }, beneath);
   m.addLayer({
     id: "boroughs-hover",
@@ -80,7 +82,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     source: "areas",
     filter: ["all", isTop, ["==", ["get", "borough"], ""]],
     layout: hidden,
-    paint: { "fill-color": boroughColor, "fill-opacity": 0.22, "fill-antialias": false },
+    paint: { "fill-color": boroughColor(), "fill-opacity": 0.22, "fill-antialias": false },
   }, beneath);
   m.addSource("borough-labels", {
     type: "geojson",
@@ -112,7 +114,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     source: "areas",
     filter: isTop,
     layout: hidden,
-    paint: { "fill-color": paletteColor, "fill-opacity": ["case", hovered, 0.22, 0.08] },
+    paint: { "fill-color": paletteColor(), "fill-opacity": ["case", hovered, T.areaFill[1], T.areaFill[0]] },
   }, beneath);
   m.addLayer({
     id: "areas-outline",
@@ -121,7 +123,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     filter: isTop,
     layout: { ...hidden, "line-join": "round" },
     paint: {
-      "line-color": ["case", hovered, paletteColor, T.areaLine],
+      "line-color": ["case", hovered, paletteColor(), T.areaLine],
       "line-opacity": ["case", hovered, 0.9, 0.5],
       "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.5, 13, 1, 16, 1.5],
     },
@@ -136,7 +138,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     source: "areas",
     filter: isSub,
     layout: hidden,
-    paint: { "fill-color": paletteColor, "fill-opacity": subFillOpacity(0.26, 0.1) },
+    paint: { "fill-color": paletteColor(), "fill-opacity": subFillOpacity(0.26, 0.1) },
   }, beneath);
   m.addLayer({
     id: "areas-sub-outline",
@@ -146,7 +148,7 @@ export function addAreaLayers(m: mapboxgl.Map, data: Areas, beneath?: string, la
     minzoom: SUB_ZOOM,
     layout: { ...hidden, "line-join": "round" },
     paint: {
-      "line-color": ["case", ["boolean", ["feature-state", "hover"], false], paletteColor, T.subLine],
+      "line-color": ["case", ["boolean", ["feature-state", "hover"], false], paletteColor(), T.subLine],
       "line-opacity": 0.6,
       "line-width": ["interpolate", ["linear"], ["zoom"], SUB_ZOOM, 0.8, 16, 1.4],
     },
@@ -216,18 +218,40 @@ export function setBoroughHighlight(m: mapboxgl.Map, boroughs: string[]) {
   const pick = (hover: number, inside: number, outside: number, normal: number): Expr | number =>
     on ? ["case", hovered, hover, inBoroughs, inside, outside] : ["case", hovered, hover, normal];
 
-  m.setPaintProperty("areas-fill", "fill-opacity", pick(0.3, 0.24, 0.02, 0.08) as Expr);
+  m.setPaintProperty("areas-fill", "fill-opacity", pick(T.areaFill[1] + 0.08, 0.24, 0.02, T.areaFill[0]) as Expr);
   m.setPaintProperty("areas-outline", "line-opacity", pick(0.9, 0.75, 0.15, 0.5) as Expr);
   m.setPaintProperty("areas-outline", "line-color", on
-    ? ["case", ["any", hovered, inBoroughs], paletteColor, T.areaLine]
-    : ["case", hovered, paletteColor, T.areaLine]);
+    ? ["case", ["any", hovered, inBoroughs], paletteColor(), T.areaLine]
+    : ["case", hovered, paletteColor(), T.areaLine]);
   m.setPaintProperty("areas-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
+  if (m.getLayer("areas-plaques")) m.setPaintProperty("areas-plaques", "icon-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
   m.setPaintProperty("areas-sub-outline", "line-opacity", on ? ["case", inBoroughs, 0.6, 0.12] : 0.6);
   m.setPaintProperty("areas-sub-hit", "fill-opacity", subFillOpacity(0.26, on ? ["case", inBoroughs, 0.14, 0.02] : 0.1));
   m.setPaintProperty("areas-sub-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.3] : 1);
   // Boroughs layer: highlighted boroughs stand out, the others fade.
   m.setPaintProperty("boroughs-fill", "fill-opacity", on ? ["case", inBoroughs, 0.2, 0.04] : 0.12);
   m.setPaintProperty("boroughs-labels", "text-opacity", on ? ["case", inBoroughs, 1, 0.4] : 1);
+  if (m.getLayer("boroughs-plaques")) m.setPaintProperty("boroughs-plaques", "icon-opacity", on ? ["case", inBoroughs, 1, 0.4] : 1);
+}
+
+/**
+ * Re-apply the current theme's colours to every neighbourhood and borough layer.
+ * Call setBoroughHighlight afterwards: it owns the outline colours and opacities.
+ */
+export function restyleAreas(m: mapboxgl.Map) {
+  if (!m.getLayer("areas-fill")) return;
+  const set = (id: string, prop: string, value: unknown) => m.setPaintProperty(id, prop as never, value as never);
+  set("boroughs-fill", "fill-color", boroughColor());
+  set("boroughs-hover", "fill-color", boroughColor());
+  set("areas-fill", "fill-color", paletteColor());
+  set("areas-sub-hit", "fill-color", paletteColor());
+  set("areas-sub-outline", "line-color", ["case", ["boolean", ["feature-state", "hover"], false], paletteColor(), T.subLine]);
+  set("areas-selected-fill", "fill-color", T.select);
+  set("areas-selected-outline", "line-color", T.selectInk);
+  for (const [id, color] of [["boroughs-labels", T.ink], ["areas-labels", T.inkSoft], ["areas-sub-labels", T.inkFaint]] as const) {
+    set(id, "text-color", color);
+    set(id, "text-halo-color", T.halo);
+  }
 }
 
 /** Brighten the borough under the cursor on the Boroughs layer (null to clear). */

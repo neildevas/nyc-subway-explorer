@@ -1,64 +1,186 @@
 /**
- * "Warm daylight explorer": a sunny walk down a tree-lined, pre-war block. Limestone
- * land, brownstone buildings, leafy parks, soft blue water, and brown-black ink, with
- * an eclectic mix of neighbourhood colours (terracotta, mustard, teal, plum, sage).
+ * Map themes. Each one recolours Mapbox's light style (so switching never reloads the
+ * map) and our own layers, and sets `data-theme` on <html> for the CSS.
  *
- * Map colours used by our own layers live here so the look can be changed in one place.
+ *   brownstone – "warm daylight explorer": limestone land, brownstone buildings, leafy
+ *                parks, brown-black ink, an eclectic painted-row-house palette.
+ *   signage    – the subway's own look: black, white, Helvetica, and the MTA line colours.
+ *   mosaic     – the old IRT station mosaics: white tile, cobalt name tablets with tan
+ *                borders, celadon and terracotta trim, names set in Cinzel (see mosaic.ts).
+ *
+ * `T` always holds the current theme's colours; layers read it when they're styled.
  */
 import type mapboxgl from "mapbox-gl";
 
 export const BASEMAP_STYLE = "mapbox://styles/mapbox/light-v11";
 
-export const T = {
+export interface Colors {
   /** Page background behind the map while it loads */
-  page: "#f2e9da",
-  /** Limestone and parchment */
-  land: "#f5eee2",
-  water: "#9fcbe0",
-  waterLabel: "#3f7391",
-  /** Leafy */
-  park: "#cde2b2",
-  /** Brownstone: buildings read as warm brown blocks when zoomed in */
-  building: "#e7d4be",
-  buildingEdge: "#d6bea2",
-  road: "#ffffff",
-  roadCasing: "#e2d4bf",
-  roadMinor: "#fcf8f1",
-  boundary: "#c4b298",
-  /** Brown-black ink, like an old printed map, and the paper halo that keeps it readable */
-  ink: "#33251a",
-  inkSoft: "#644d3b",
-  inkFaint: "#8d7964",
-  halo: "#fffaf1",
-  /** Selection: mustard glow with a dark ink outline (yellow alone vanishes on cream) */
-  select: "#e3a72f",
-  selectInk: "#33251a",
-  /** Station dots */
-  stationFill: "#ffffff",
-  stationStroke: "#33251a",
+  page: string;
+  land: string;
+  water: string;
+  waterLabel: string;
+  park: string;
+  building: string;
+  buildingEdge: string;
+  road: string;
+  roadCasing: string;
+  roadMinor: string;
+  boundary: string;
+  /** Main text ink and the halo that keeps it readable over the map */
+  ink: string;
+  inkSoft: string;
+  inkFaint: string;
+  halo: string;
+  /** Selection: a glow colour and an outline colour */
+  select: string;
+  selectInk: string;
+  stationFill: string;
+  stationStroke: string;
   /** Decorative trains */
-  ambient: "#6f5a47",
-  /** Parks, deeper than the basemap green so they read as "our" data */
-  parkGreen: "#5a9e4f",
-  parkLabel: "#2e6630",
+  ambient: string;
+  /** Parks from our data, and their names */
+  parkGreen: string;
+  parkLabel: string;
   /** Neighbourhood outlines when not highlighted */
-  areaLine: "#bba78c",
-  subLine: "#cdbba2",
-};
+  areaLine: string;
+  subLine: string;
+  /** Neighbourhood fill strength (normal, hovered): darker maps need a bit more */
+  areaFill: [number, number];
+  /**
+   * Neighbourhood colours. Five, because the build colours neighbouring areas 0–4 so
+   * no two that touch share a colour.
+   */
+  areaPalette: [string, string, string, string, string];
+  boroughs: Record<string, string>;
+}
 
-/**
- * Neighbourhood colours: an eclectic, painted-row-house mix. Five, because the build
- * colours neighbouring areas 0–4 so no two that touch share a colour.
- */
-export const AREA_PALETTE = ["#e3a72f", "#d46a43", "#4e9a8c", "#9a6aa0", "#7ea35f"];
-/** Borough tints (the Boroughs layer) */
-export const BOROUGH_COLORS: Record<string, string> = {
-  Manhattan: "#d46a43",
-  Brooklyn: "#9a6aa0",
-  Queens: "#4e9a8c",
-  Bronx: "#e3a72f",
-  "Staten Island": "#7ea35f",
-};
+export const THEMES = {
+  brownstone: {
+    label: "Brownstone",
+    colors: {
+      page: "#f2e9da",
+      land: "#f5eee2", // limestone and parchment
+      water: "#9fcbe0",
+      waterLabel: "#3f7391",
+      park: "#cde2b2",
+      building: "#e7d4be", // brownstone blocks when zoomed in
+      buildingEdge: "#d6bea2",
+      road: "#ffffff",
+      roadCasing: "#e2d4bf",
+      roadMinor: "#fcf8f1",
+      boundary: "#c4b298",
+      ink: "#33251a", // brown-black, like an old printed map
+      inkSoft: "#644d3b",
+      inkFaint: "#8d7964",
+      halo: "#fffaf1",
+      select: "#e3a72f", // mustard glow; yellow alone vanishes on cream
+      selectInk: "#33251a",
+      stationFill: "#ffffff",
+      stationStroke: "#33251a",
+      ambient: "#6f5a47",
+      parkGreen: "#5a9e4f",
+      parkLabel: "#2e6630",
+      areaLine: "#bba78c",
+      subLine: "#cdbba2",
+      areaFill: [0.08, 0.22],
+      areaPalette: ["#e3a72f", "#d46a43", "#4e9a8c", "#9a6aa0", "#7ea35f"],
+      boroughs: { Manhattan: "#d46a43", Brooklyn: "#9a6aa0", Queens: "#4e9a8c", Bronx: "#e3a72f", "Staten Island": "#7ea35f" },
+    },
+  },
+  signage: {
+    label: "Signage",
+    colors: {
+      page: "#000000",
+      land: "#0b0b0b",
+      water: "#1b2228",
+      waterLabel: "#7d8b96",
+      park: "#122016",
+      building: "#161616",
+      buildingEdge: "#222222",
+      road: "#2b2b2b",
+      roadCasing: "#000000",
+      roadMinor: "#1c1c1c",
+      boundary: "#3a3a3a",
+      ink: "#ffffff",
+      inkSoft: "#d0d0d0",
+      inkFaint: "#9a9a9a",
+      halo: "#000000",
+      select: "#FCCC0A", // N/Q/R/W yellow
+      selectInk: "#ffffff",
+      stationFill: "#ffffff",
+      stationStroke: "#000000",
+      ambient: "#A7A9AC", // shuttle gray
+      parkGreen: "#00933C", // 4/5/6 green
+      parkLabel: "#6CBE45", // G green
+      areaLine: "#3d3d3d",
+      subLine: "#333333",
+      areaFill: [0.12, 0.28],
+      // A/C/E blue, B/D/F/M orange, 4/5/6 green, 7 purple, N/Q/R/W yellow
+      areaPalette: ["#0062CF", "#FF6319", "#00933C", "#B933AD", "#FCCC0A"],
+      boroughs: { Manhattan: "#EE352E", Brooklyn: "#FF6319", Queens: "#B933AD", Bronx: "#00933C", "Staten Island": "#0062CF" },
+    },
+  },
+  mosaic: {
+    label: "Mosaic",
+    colors: {
+      page: "#efece4",
+      land: "#f4f1e9", // glazed white tile
+      water: "#9cc4c4", // celadon
+      waterLabel: "#2f6264",
+      park: "#c7ddc0",
+      building: "#e9e2d1",
+      buildingEdge: "#d8cdb5",
+      road: "#ffffff",
+      roadCasing: "#ddd2b8",
+      roadMinor: "#fbf9f4",
+      boundary: "#c8b88f",
+      ink: "#1f2b57", // cobalt-navy ink
+      inkSoft: "#3c4670",
+      inkFaint: "#7b7a70",
+      halo: "#fbf9f3",
+      select: "#d9b45a", // ochre tile
+      selectInk: "#2c4596",
+      stationFill: "#ffffff",
+      stationStroke: "#2c4596",
+      ambient: "#6e4a30", // umber
+      parkGreen: "#5f9e7a",
+      parkLabel: "#2f6b4c",
+      areaLine: "#cbb88a",
+      subLine: "#d8c9a4",
+      areaFill: [0.09, 0.24],
+      // Cobalt, celadon, terracotta, ochre, plum: the trim colours of the station mosaics
+      areaPalette: ["#2c4596", "#4f9a7a", "#b65a44", "#d9b45a", "#7a5a9a"],
+      boroughs: { Manhattan: "#2c4596", Brooklyn: "#b65a44", Queens: "#4f9a7a", Bronx: "#d9b45a", "Staten Island": "#7a5a9a" },
+    },
+  },
+} satisfies Record<string, { label: string; colors: Colors }>;
+
+export type ThemeName = keyof typeof THEMES;
+export const THEME_NAMES = Object.keys(THEMES) as ThemeName[];
+const THEME_KEY = "standclear.theme";
+
+function loadTheme(): ThemeName {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved && saved in THEMES) return saved as ThemeName;
+  } catch { /* storage unavailable */ }
+  return "brownstone";
+}
+
+/** The current theme's colours (updated in place by setTheme). */
+export const T: Colors = { ...THEMES.brownstone.colors };
+export let currentTheme: ThemeName = "brownstone";
+
+/** Switch theme: updates `T`, the page's `data-theme`, and remembers the choice. Restyle the map after. */
+export function setTheme(name: ThemeName) {
+  currentTheme = name;
+  Object.assign(T, THEMES[name].colors);
+  document.documentElement.dataset.theme = name;
+  try { localStorage.setItem(THEME_KEY, name); } catch { /* storage unavailable */ }
+}
+// Apply the saved theme straight away, before the map or any CSS paints.
+setTheme(loadTheme());
 
 const set = (m: mapboxgl.Map, id: string, prop: string, value: unknown) => {
   try { m.setPaintProperty(id, prop as never, value as never); } catch { /* not this layer's property */ }
