@@ -1,16 +1,44 @@
 /**
- * Map themes. Each one recolours Mapbox's light style (so switching never reloads the
- * map) and our own layers, and sets `data-theme` on <html> for the CSS.
+ * Palettes for our own layers and the panel, and the Mapbox Standard basemap settings.
  *
- *   brownstone – "warm daylight explorer": limestone land, brownstone buildings, leafy
- *                parks, brown-black ink, an eclectic painted-row-house palette.
+ *   brownstone – warm daylight: brown-black ink, leafy parks, a painted-row-house palette.
  *   signage    – the subway's own look: black, white, Helvetica, and the MTA line colours.
  *
- * `T` always holds the current theme's colours; layers read it when they're styled.
+ * `T` always holds the current palette's colours; layers read it when they're styled.
+ * (Basemap colour fields like `land` and `water` are left over from the light-style
+ * version and unused with Standard.)
  */
-import type mapboxgl from "mapbox-gl";
 
-export const BASEMAP_STYLE = "mapbox://styles/mapbox/light-v11";
+/**
+ * Mapbox Standard: 3D buildings and landmarks, light presets (dawn, day, dusk, night)
+ * and built-in themes (default, faded). Its look comes from its own settings, so the
+ * palettes below now only colour our layers (lines, stations, neighbourhoods, parks)
+ * and the panel, following the light: Brownstone by day, Signage by night.
+ */
+export const BASEMAP_STYLE = "mapbox://styles/mapbox/standard";
+
+export type LightPreset = "dawn" | "day" | "dusk" | "night";
+export const LIGHT_PRESETS: LightPreset[] = ["dawn", "day", "dusk", "night"];
+export type BasemapTheme = "default" | "faded";
+/** Which palette suits each light: warm and inky by day, signage black and white after dark. */
+export const themeForLight = (light: LightPreset): ThemeName => (light === "dusk" || light === "night" ? "signage" : "brownstone");
+
+export interface MapPrefs { light: LightPreset; basemap: BasemapTheme; threeD: boolean }
+const MAP_KEY = "standclear.map";
+export function loadMapPrefs(): MapPrefs {
+  const fallback: MapPrefs = { light: "day", basemap: "default", threeD: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem(MAP_KEY) ?? "{}");
+    return {
+      light: LIGHT_PRESETS.includes(saved.light) ? saved.light : fallback.light,
+      basemap: saved.basemap === "faded" ? "faded" : "default",
+      threeD: typeof saved.threeD === "boolean" ? saved.threeD : fallback.threeD,
+    };
+  } catch { return fallback; }
+}
+export function saveMapPrefs(p: MapPrefs) {
+  try { localStorage.setItem(MAP_KEY, JSON.stringify(p)); } catch { /* storage unavailable */ }
+}
 
 export interface Colors {
   /** Page background behind the map while it loads */
@@ -123,54 +151,16 @@ export const THEMES = {
 
 export type ThemeName = keyof typeof THEMES;
 export const THEME_NAMES = Object.keys(THEMES) as ThemeName[];
-const THEME_KEY = "standclear.theme";
-
-function loadTheme(): ThemeName {
-  try {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved && saved in THEMES) return saved as ThemeName;
-  } catch { /* storage unavailable */ }
-  return "brownstone";
-}
 
 /** The current theme's colours (updated in place by setTheme). */
 export const T: Colors = { ...THEMES.brownstone.colors };
 export let currentTheme: ThemeName = "brownstone";
 
-/** Switch theme: updates `T`, the page's `data-theme`, and remembers the choice. Restyle the map after. */
+/** Switch palette: updates `T` and the page's `data-theme`. Restyle the map's layers after. */
 export function setTheme(name: ThemeName) {
   currentTheme = name;
   Object.assign(T, THEMES[name].colors);
   document.documentElement.dataset.theme = name;
-  try { localStorage.setItem(THEME_KEY, name); } catch { /* storage unavailable */ }
 }
-// Apply the saved theme straight away, before the map or any CSS paints.
-setTheme(loadTheme());
-
-const set = (m: mapboxgl.Map, id: string, prop: string, value: unknown) => {
-  try { m.setPaintProperty(id, prop as never, value as never); } catch { /* not this layer's property */ }
-};
-
-/** Recolour the basemap's layers warm. Safe to call on any classic Mapbox style. */
-export function applyBasemapTheme(m: mapboxgl.Map) {
-  for (const layer of m.getStyle()?.layers ?? []) {
-    const { id, type } = layer;
-    if (type === "background") set(m, id, "background-color", T.land);
-    else if (type === "fill") {
-      if (/water/.test(id)) set(m, id, "fill-color", T.water);
-      else if (/park|national|landcover|grass|wood|pitch|cemetery/.test(id)) set(m, id, "fill-color", T.park);
-      else if (/building/.test(id)) { set(m, id, "fill-color", T.building); set(m, id, "fill-outline-color", T.buildingEdge); }
-      else if (/^land$|landuse|land-structure|aeroway/.test(id)) set(m, id, "fill-color", T.land);
-    } else if (type === "line") {
-      if (/water/.test(id)) set(m, id, "line-color", T.water);
-      else if (/admin|boundary/.test(id)) set(m, id, "line-color", T.boundary);
-      else if (/case|casing/.test(id)) set(m, id, "line-color", T.roadCasing);
-      else if (/motorway|trunk|primary|secondary|tertiary|major/.test(id)) set(m, id, "line-color", T.road);
-      else if (/road|street|bridge|tunnel|path|pedestrian|service/.test(id)) set(m, id, "line-color", T.roadMinor);
-    } else if (type === "symbol") {
-      const water = /water|marine/.test(id);
-      set(m, id, "text-color", water ? T.waterLabel : /road|street/.test(id) ? T.inkFaint : T.inkSoft);
-      set(m, id, "text-halo-color", T.halo);
-    }
-  }
-}
+// Apply the theme for the saved light straight away, before the map or any CSS paints.
+setTheme(themeForLight(loadMapPrefs().light));

@@ -9,7 +9,7 @@ import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
-import { applyBasemapTheme, BASEMAP_STYLE, currentTheme, setTheme, T, THEME_NAMES, THEMES, type ThemeName } from "./theme";
+import { BASEMAP_STYLE, type BasemapTheme, currentTheme, LIGHT_PRESETS, type LightPreset, loadMapPrefs, saveMapPrefs, setTheme, T, themeForLight, type ThemeName } from "./theme";
 import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, restyleParks, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
 import { addAreaLayers, areaBounds, boroughBounds, restyleAreas, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
@@ -66,6 +66,8 @@ const AMBIENT_DEFAULT = 15;
 const AMBIENT_STEP = 5;
 const AMBIENT_MAX = 60;
 
+const LIGHT_LABELS: Record<LightPreset, string> = { dawn: "Dawn", day: "Day", dusk: "Dusk", night: "Night" };
+
 const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
 
 /**
@@ -93,7 +95,26 @@ const panelPadding = () =>
     : { top: 70, right: 60, bottom: 90, left: 400 };
 
 /** The basemap's first text layer; our lines go under it so place names stay on top. */
-const firstLabelLayer = (m: mapboxgl.Map) => m.getStyle()?.layers?.find((l) => l.type === "symbol")?.id;
+/** How far to tilt the map in 3D mode (degrees). */
+const THREE_D_PITCH = 55;
+
+/**
+ * Mapbox Standard places custom layers in "slots" rather than under named basemap
+ * layers: lines and fills go in "middle" (above roads, under 3D buildings and labels),
+ * dots and names in "top". This wraps addLayer so every layer gets the right slot, and a
+ * `beforeId` is only used when it points at a layer in the same slot.
+ */
+function assignSlots(m: mapboxgl.Map) {
+  const slots = new Map<string, string>();
+  const add = m.addLayer.bind(m);
+  type Layer = Parameters<typeof m.addLayer>[0];
+  m.addLayer = ((layer: Layer, before?: string) => {
+    const type = (layer as { type?: string }).type;
+    const slot = type === "symbol" || type === "circle" ? "top" : "middle";
+    slots.set(layer.id, slot);
+    return add({ ...layer, slot } as Layer, before && slots.get(before) === slot ? before : undefined);
+  }) as typeof m.addLayer;
+}
 
 /** Express variants (6X, 7X, FX) count as their base route. */
 const baseRoute = (r: string, routes: Routes) => (/^[0-9A-Z]X$/.test(r) && routes[r[0]] ? r[0] : r);
@@ -123,13 +144,36 @@ export default function App() {
   // Map layers: Transit and Neighborhoods, toggled independently.
   const [showTransit, setShowTransit] = useState(() => loadLayerPrefs().transit);
 
-  // ---- Theme: recolour the map in place (no reload) and swap the CSS variables ----
+  // ---- Basemap: Mapbox Standard's light, theme and 3D (remembered) ---------
+  const [mapPrefs, setMapPrefs] = useState(loadMapPrefs);
+  const mapPrefsRef = useRef(mapPrefs);
+  mapPrefsRef.current = mapPrefs;
+  const updateMap = (patch: Partial<typeof mapPrefs>) => setMapPrefs((p) => ({ ...p, ...patch }));
+  useEffect(() => {
+    saveMapPrefs(mapPrefs);
+    const m = map.current;
+    if (!m) return;
+    try {
+      m.setConfigProperty("basemap", "lightPreset", mapPrefs.light);
+      m.setConfigProperty("basemap", "theme", mapPrefs.basemap);
+      m.setConfigProperty("basemap", "show3dObjects", mapPrefs.threeD);
+    } catch { /* style still loading: the constructor's config covers it */ }
+    // Our layers and the panel follow the light: Brownstone by day, Signage after dark.
+    const next = themeForLight(mapPrefs.light);
+    if (next !== currentTheme) { setTheme(next); setThemeState(next); }
+  }, [mapPrefs]);
+  // Tilt for 3D, flatten for 2D.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    m.easeTo({ pitch: mapPrefs.threeD ? THREE_D_PITCH : 0, duration: 800 });
+  }, [mapPrefs.threeD]);
+
+  // ---- Palette: recolour our layers in place and swap the CSS variables ------
   const [theme, setThemeState] = useState<ThemeName>(currentTheme);
-  const changeTheme = (name: ThemeName) => { setTheme(name); setThemeState(name); };
   useEffect(() => {
     const m = map.current;
     if (!m?.getLayer("lines")) return; // first load styles itself
-    applyBasemapTheme(m);
     restyleTransit(m);
     restyleAreas(m);
     restyleParks(m);
@@ -303,19 +347,32 @@ export default function App() {
     if (!mapEl.current || map.current) return;
     if (!mapboxgl.accessToken) { setError("Add VITE_MAPBOX_TOKEN to client/.env.local"); return; }
 
+    const prefs = mapPrefsRef.current;
     const m = new mapboxgl.Map({
       container: mapEl.current,
       style: BASEMAP_STYLE,
+      config: {
+        basemap: {
+          lightPreset: prefs.light,
+          theme: prefs.basemap,
+          show3dObjects: prefs.threeD,
+          // We draw our own stations and lines; Mapbox's transit labels would double them up.
+          showTransitLabels: false,
+          showPointOfInterestLabels: false,
+        },
+      },
       center: NYC,
       zoom: 10.6,
+      pitch: prefs.threeD ? THREE_D_PITCH : 0,
       minZoom: 9,
       maxBounds: [[-74.6, 40.35], [-73.4, 41.1]],
     });
     map.current = m;
-    m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
+    assignSlots(m);
+    // The compass shows (and resets) rotation and tilt, which matter in 3D.
+    m.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
     m.on("load", async () => {
-      applyBasemapTheme(m);
       try {
         const [lines, stationsData, routesData] = await fetchStatic();
         if (lines.features.length && typeof lines.features[0].properties?.slot !== "number") {
@@ -694,20 +751,30 @@ export default function App() {
             Live subway trains{areas ? ", the neighborhoods they run through" : ""}{parks ? (areas ? " and the parks in between" : " and the parks nearby") : ""}.
             Search for anything, or hit “Take me somewhere” and go somewhere new.
           </p>
-          <div className="theme-switch" role="radiogroup" aria-label="Map style">
-            {THEME_NAMES.map((name) => (
-              <button
-                key={name}
-                role="radio"
-                aria-checked={theme === name}
-                className={theme === name ? "on" : ""}
-                onClick={() => changeTheme(name)}
-                title={`${THEMES[name].label} style`}
-              >
-                <span className={`theme-swatch ${name}`} aria-hidden="true" />
-                {THEMES[name].label}
-              </button>
-            ))}
+          <div className="map-style" aria-label="Map style">
+            <div className="seg" role="radiogroup" aria-label="Time of day">
+              {LIGHT_PRESETS.map((l) => (
+                <button key={l} role="radio" aria-checked={mapPrefs.light === l} className={mapPrefs.light === l ? "on" : ""} onClick={() => updateMap({ light: l })} title={LIGHT_LABELS[l]}>
+                  <span className={`light-icon ${l}`} aria-hidden="true" />
+                  <span className="seg-label">{LIGHT_LABELS[l]}</span>
+                </button>
+              ))}
+            </div>
+            <div className="seg" role="radiogroup" aria-label="Basemap">
+              {(["default", "faded"] as BasemapTheme[]).map((b) => (
+                <button key={b} role="radio" aria-checked={mapPrefs.basemap === b} className={mapPrefs.basemap === b ? "on" : ""} onClick={() => updateMap({ basemap: b })}>
+                  {b === "default" ? "Default" : "Faded"}
+                </button>
+              ))}
+            </div>
+            <button
+              className={`seg-toggle${mapPrefs.threeD ? " on" : ""}`}
+              aria-pressed={mapPrefs.threeD}
+              onClick={() => updateMap({ threeD: !mapPrefs.threeD })}
+              title={mapPrefs.threeD ? "Flatten the map (2D)" : "Tilt the map and show 3D buildings"}
+            >
+              3D
+            </button>
           </div>
         </header>
 
@@ -1143,9 +1210,8 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
   m.addSource("trains", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   m.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 
-  // Put the subway lines under the basemap's first text layer, so neighbourhood,
-  // borough and street names stay readable on top of them.
-  const beforeLabels = firstLabelLayer(m);
+  // Lines go in the "middle" slot (see useSlots), under the basemap's labels.
+  const beforeLabels = undefined;
 
   // A paper-coloured outline under the lines, so even pale lines (N/Q/R/W, G, shuttles)
   // stand out from the cream basemap.
