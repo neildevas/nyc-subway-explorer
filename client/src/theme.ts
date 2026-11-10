@@ -5,13 +5,13 @@
  *   signage    – the subway's own look: black, white, Helvetica, and the MTA line colours.
  *
  * `T` always holds the current palette's colours; layers read it when they're styled.
- * (Basemap colour fields like `land` and `water` are left over from the light-style
- * version and unused with Standard.)
+ * The basemap colour fields (`land`, `water`, `road`…) recolour Standard through its
+ * colour overrides (see basemapColors).
  */
 
 /**
  * Mapbox Standard: 3D buildings and landmarks, light presets (dawn, day, dusk, night)
- * and built-in themes (default, faded). Its look comes from its own settings, so the
+ * and built-in themes (we use the default one). Its look comes from its own settings, so the
  * palettes below now only colour our layers (lines, stations, neighbourhoods, parks)
  * and the panel, following the light: Brownstone by day, Signage by night.
  */
@@ -19,25 +19,30 @@ export const BASEMAP_STYLE = "mapbox://styles/mapbox/standard";
 
 export type LightPreset = "dawn" | "day" | "dusk" | "night";
 export const LIGHT_PRESETS: LightPreset[] = ["dawn", "day", "dusk", "night"];
-export type BasemapTheme = "default" | "faded";
 /** Which palette suits each light: warm and inky by day, signage black and white after dark. */
 export const themeForLight = (light: LightPreset): ThemeName => (light === "dusk" || light === "night" ? "signage" : "brownstone");
 
-export interface MapPrefs { light: LightPreset; basemap: BasemapTheme; threeD: boolean }
+export type PoiKindName = "arts" | "landmarks" | "religion" | "learning";
+const POI_KIND_NAMES: PoiKindName[] = ["arts", "landmarks", "religion", "learning"];
+export interface MapPrefs { light: LightPreset; threeD: boolean; poi: boolean; poiKinds: PoiKindName[]; streetNames: boolean }
 const MAP_KEY = "standclear.map";
 export function loadMapPrefs(): MapPrefs {
-  const fallback: MapPrefs = { light: "day", basemap: "default", threeD: true };
+  const fallback: MapPrefs = { light: "day", threeD: true, poi: true, poiKinds: [...POI_KIND_NAMES], streetNames: true };
   try {
     const saved = JSON.parse(localStorage.getItem(MAP_KEY) ?? "{}");
     return {
       light: LIGHT_PRESETS.includes(saved.light) ? saved.light : fallback.light,
-      basemap: saved.basemap === "faded" ? "faded" : "default",
       threeD: typeof saved.threeD === "boolean" ? saved.threeD : fallback.threeD,
+      poi: typeof saved.poi === "boolean" ? saved.poi : fallback.poi,
+      streetNames: typeof saved.streetNames === "boolean" ? saved.streetNames : fallback.streetNames,
+      poiKinds: Array.isArray(saved.poiKinds)
+        ? [...saved.poiKinds.filter((k: string) => POI_KIND_NAMES.includes(k as PoiKindName)), ...(saved.poiKinds.includes("learning") || saved.poiKindsV === 2 ? [] : ["learning" as const])]
+        : fallback.poiKinds,
     };
   } catch { return fallback; }
 }
 export function saveMapPrefs(p: MapPrefs) {
-  try { localStorage.setItem(MAP_KEY, JSON.stringify(p)); } catch { /* storage unavailable */ }
+  try { localStorage.setItem(MAP_KEY, JSON.stringify({ ...p, poiKindsV: 2 })); } catch { /* storage unavailable */ }
 }
 
 export interface Colors {
@@ -162,5 +167,110 @@ export function setTheme(name: ThemeName) {
   Object.assign(T, THEMES[name].colors);
   document.documentElement.dataset.theme = name;
 }
-// Apply the theme for the saved light straight away, before the map or any CSS paints.
-setTheme(themeForLight(loadMapPrefs().light));
+/**
+ * Small adjustments per light on top of the palette, so neighbourhood boundaries stay
+ * readable against Standard's basemap in each light: deeper outlines and stronger fills
+ * on the pale day and dawn maps, lighter outlines and stronger fills on the darker dusk
+ * and night maps.
+ */
+const LIGHT_TWEAKS: Partial<Record<LightPreset, Partial<Colors>>> = {
+  dawn: { areaLine: "#7a6247", subLine: "#977f62", areaFill: [0.15, 0.3] },
+  day: { areaLine: "#86704f", subLine: "#a08a6a", areaFill: [0.13, 0.28] },
+  dusk: { areaLine: "#a6a29b", subLine: "#8a8680", areaFill: [0.16, 0.32] },
+  night: { areaLine: "#8a8a8a", subLine: "#6f6f6f", areaFill: [0.18, 0.34] },
+};
+
+/**
+ * Streets as soft, light lanes that sit just above the land colour, like the old
+ * Brownstone (near-white on cream) and Signage (light gray on black) maps, so our own
+ * layers carry the map.
+ *
+ * Standard lights everything with its light preset, which dims pure white to a light
+ * gray, and it darkens road edges based on the road colour. Blending roads *into* the
+ * land made those edges read as gray lines; making them *lighter* than the land, up to
+ * white by day, keeps them reading as pale lanes.
+ */
+const STREET_LIGHTEN = { roads: 0.35, major: 0.5 }; // after dark: how far towards white
+const BUILDING_STRENGTH = 0.45; // how much building colour to keep (the rest is land)
+
+/** Any CSS colour → [r, g, b, a], via a canvas (which understands every CSS colour format). Null if it isn't one. */
+function rgba(color: unknown): [number, number, number, number] | null {
+  if (typeof color !== "string") return null;
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#000";
+  ctx.fillStyle = color;
+  const c = ctx.fillStyle as string;
+  if (c.startsWith("#")) {
+    const n = parseInt(c.slice(1), 16);
+    return [n >> 16, (n >> 8) & 255, n & 255, 1];
+  }
+  const m = c.match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  const [r, g, b, a = "1"] = m[1].split(",").map((x) => x.trim());
+  return [Number(r), Number(g), Number(b), Number(a)];
+}
+
+/** Mix `amount` of `color` into `base`. Falls back to `color` unchanged if either isn't a plain colour. */
+function blend(base: unknown, color: unknown, amount: number): unknown {
+  const a = rgba(base), b = rgba(color);
+  if (!a || !b) return color;
+  const mix = (i: number) => Math.round(a[i] + (b[i] - a[i]) * amount);
+  return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+}
+
+/** Standard's zoning colours: setting them to the land colour removes most of the street-level noise. */
+const ZONING = ["colorCommercial", "colorEducation", "colorMedical", "colorIndustrial"];
+
+/**
+ * Standard's colour overrides for a time of day.
+ *
+ * Day: the quiet street level of the old Brownstone map (cream land, soft roads, warm
+ * buildings, softer labels). Dawn, dusk and night keep Standard's own colours (`defaults`,
+ * read from the style once it loads), with only the zoning patchwork removed.
+ */
+export function basemapColors(light: LightPreset, defaults: Record<string, unknown>): Record<string, unknown> {
+  if (light !== "day") {
+    const quiet: Record<string, unknown> = { ...defaults };
+    for (const key of ZONING) quiet[key] = defaults.colorLand;
+    // Streets: a shade lighter than the land, so they read as pale lanes, not lines.
+    quiet.colorRoads = blend(defaults.colorLand, "#ffffff", STREET_LIGHTEN.roads);
+    quiet.colorTrunks = blend(defaults.colorLand, "#ffffff", STREET_LIGHTEN.major);
+    quiet.colorMotorways = blend(defaults.colorLand, "#ffffff", STREET_LIGHTEN.major);
+    quiet.colorBuildings = blend(defaults.colorLand, defaults.colorBuildings, BUILDING_STRENGTH);
+    return quiet;
+  }
+  return {
+    colorLand: T.land,
+    colorWater: T.water,
+    colorGreenspace: T.park,
+    colorBuildings: blend(T.land, T.building, BUILDING_STRENGTH),
+    // Pure white: under Standard's daylight it lands close to the old near-white streets.
+    colorRoads: "#ffffff",
+    colorTrunks: "#ffffff",
+    colorMotorways: "#ffffff",
+    colorCommercial: T.land,
+    colorEducation: T.land,
+    colorMedical: T.land,
+    colorIndustrial: T.land,
+    colorPlaceLabels: T.inkSoft,
+    colorRoadLabels: T.inkFaint,
+    colorAdminBoundaries: T.boundary,
+  };
+}
+
+/** Basemap details switched off to keep the map calm. */
+export const QUIET_BASEMAP = {
+  showPedestrianRoads: false, // footpaths and trails: lots of thin lines at street level
+  showLandmarkIcons: false, // our Places layer covers landmarks
+  showAdminBoundaries: false,
+};
+
+/** Set the palette for a time of day: the light's theme, plus its tweaks. Restyle the map's layers after. */
+export function setLight(light: LightPreset) {
+  setTheme(themeForLight(light));
+  Object.assign(T, LIGHT_TWEAKS[light] ?? {});
+}
+
+// Apply the palette for the saved light straight away, before the map or any CSS paints.
+setLight(loadMapPrefs().light);

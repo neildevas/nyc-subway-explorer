@@ -577,24 +577,19 @@ footer a { color: inherit; }
 .station-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--ink); }
 .result-bullets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; max-width: 110px; }
 
-/* ---- Decorative trains: + / − count, under the layer toggles ------------------ */
+/* ---- Decorative trains: + / − count (inside the settings card) ----------------- */
 .ambient-control {
-  position: absolute;
-  top: 66px;
-  right: 16px;
-  z-index: 3;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
-  background: var(--panel);
-  backdrop-filter: blur(8px);
+  padding: 2px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  box-shadow: 0 6px 24px var(--shadow);
+  background: var(--field);
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
+  flex: none;
 }
 .ambient-control > span { display: inline-flex; align-items: center; gap: 6px; min-width: 76px; padding: 0 2px; justify-content: center; font-variant-numeric: tabular-nums; cursor: help; white-space: nowrap; }
 .ambient-control small { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
@@ -615,10 +610,6 @@ footer a { color: inherit; }
 }
 .ambient-control button:hover:not(:disabled) { background: var(--hover); }
 .ambient-control button:disabled { opacity: 0.35; cursor: not-allowed; }
-@media (max-width: 600px) {
-  /* The picker sits under the layer toggles on phones, so go below it. */
-  .ambient-control { top: 124px; }
-}
 
 /* ---- Style switch, in the panel header ------------------------------------------ */
 .theme-switch {
@@ -699,24 +690,63 @@ footer a { color: inherit; }
 :root[data-theme="signage"] .go-button:hover { background: #000; }
 :root[data-theme="signage"] .go-button.open { box-shadow: 0 0 0 1.5px #fff, 0 0 0 4px #FCCC0A, 0 8px 28px var(--shadow); }
 
-/* ---- Map style: time of day, Default/Faded, 3D (Mapbox Standard) ----------------- */
-.map-style { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.map-style .seg {
-  display: inline-flex;
+
+/* ---- Map settings: a gear under the layer toggles, opening a small card ---------- */
+.map-settings { position: absolute; top: 66px; right: 16px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; }
+.settings-button {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  color: var(--muted);
+  box-shadow: 0 6px 24px var(--shadow);
+  cursor: pointer;
+  transition: color 0.12s ease, transform 0.3s ease;
+}
+.settings-button:hover { color: var(--ink); }
+.settings-button.open { color: var(--ink); transform: rotate(45deg); }
+.settings-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.settings-card {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px var(--shadow);
+  color: var(--ink);
+  animation: picker-in 0.14s ease-out;
+}
+.settings-card section + section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.settings-card h4 { margin: 0 0 8px; font-size: 13px; font-weight: 700; }
+.settings-card .muted { margin: 2px 0 0; font-size: 12px; line-height: 1.35; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-row h4 { margin: 0; }
+.settings-card .seg {
+  display: flex;
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--field);
 }
-.map-style button {
+.settings-card .seg button {
   appearance: none;
-  display: inline-flex;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 7px 4px 6px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 7px;
   background: none;
   color: var(--muted);
   font: inherit;
@@ -724,17 +754,44 @@ footer a { color: inherit; }
   font-weight: 600;
   cursor: pointer;
 }
-.map-style button:hover { color: var(--ink); background: var(--hover); }
-.map-style button.on { background: var(--ink); color: var(--panel-solid); }
-.map-style .seg-toggle { border: 1px solid var(--line); background: var(--field); padding: 5px 12px; }
-.map-style .seg-toggle.on { border-color: var(--ink); }
-/* Only the active time of day shows its name, to keep the row compact */
-.map-style .seg button:not(.on) .seg-label { display: none; }
-.map-style .seg button:has(.light-icon) { padding: 5px 8px; }
-.map-style .seg button.on:has(.light-icon) { padding-right: 11px; }
+.settings-card .seg button:hover { color: var(--ink); background: var(--hover); }
+.settings-card .seg button.on { background: var(--ink); color: var(--panel-solid); }
 /* Little sky swatches for each time of day */
-.light-icon { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.4); }
+.light-icon { width: 16px; height: 16px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.4); }
 .light-icon.dawn { background: linear-gradient(#f6b38e, #f4dfb8); }
 .light-icon.day { background: radial-gradient(circle at 50% 50%, #ffd34d 0 45%, #9fd0f2 50%); }
 .light-icon.dusk { background: linear-gradient(#5b4a8a, #f08a5d); }
 .light-icon.night { background: radial-gradient(circle at 65% 35%, #e9e6d6 0 22%, #1d2440 26%); }
+/* On/off switch */
+.switch {
+  appearance: none;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); transition: transform 0.15s ease; }
+.switch.on { background: var(--ink); }
+.switch.on span { transform: translateX(16px); background: var(--panel-solid); }
+@media (max-width: 600px) {
+  /* The "Take me somewhere" button sits under the layer toggles on phones */
+  .map-settings { top: 124px; }
+}
+
+/* Point-of-interest categories in the settings card */
+.poi-kinds { margin-top: 10px; }
+.poi-kinds .chip { display: inline-flex; align-items: center; gap: 6px; }
+.poi-dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px #fff; flex: none; }
+.poi-kinds .chip:not(.on) .poi-dot { opacity: 0.45; }
+
+/* ---- Point of interest card ---------------------------------------------------- */
+.poi-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+.poi-facts span { padding: 3px 9px; border-radius: 999px; background: var(--hover); color: var(--ink); font-size: 12px; }
+.poi-facts .poi-kind { color: #fff; font-weight: 600; }
+.poi-links { display: flex; gap: 14px; flex-wrap: wrap; }
+.line-card.poi-hover { border-left-color: var(--accent); }

@@ -7,9 +7,12 @@ import { type AmbientTrains, restyleAmbient, setAmbientFocus, startAmbientTrains
 import { Bullet, routeSort } from "./Bullet";
 import { RandomPicker, type RandomKind } from "./RandomPicker";
 import { LayerToggles } from "./LayerToggles";
+import { MapSettings } from "./MapSettings";
+import { addPoiLayer, POI_LAYER, restylePois, setPoiKinds, setPoisVisible, setSelectedPoi } from "./poi";
+import { type Poi, PoiPanel } from "./PoiPanel";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
-import { BASEMAP_STYLE, type BasemapTheme, currentTheme, LIGHT_PRESETS, type LightPreset, loadMapPrefs, saveMapPrefs, setTheme, T, themeForLight, type ThemeName } from "./theme";
+import { BASEMAP_STYLE, basemapColors, currentTheme, type LightPreset, QUIET_BASEMAP, loadMapPrefs, saveMapPrefs, setLight, T } from "./theme";
 import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, restyleParks, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
 import { addAreaLayers, areaBounds, boroughBounds, restyleAreas, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
@@ -66,8 +69,6 @@ const AMBIENT_DEFAULT = 15;
 const AMBIENT_STEP = 5;
 const AMBIENT_MAX = 60;
 
-const LIGHT_LABELS: Record<LightPreset, string> = { dawn: "Dawn", day: "Day", dusk: "Dusk", night: "Night" };
-
 const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
 
 /**
@@ -94,7 +95,28 @@ const panelPadding = () =>
     ? { top: 70, right: 30, left: 30, bottom: window.innerHeight * 0.55 + 20 }
     : { top: 70, right: 60, bottom: 90, left: 400 };
 
-/** The basemap's first text layer; our lines go under it so place names stay on top. */
+/** Standard's own colour settings, read before we change any, so other times of day can go back to them. */
+let standardColors: Record<string, unknown> | null = null;
+
+/** Quiet the basemap for this time of day (see basemapColors). */
+function applyBasemapColors(m: mapboxgl.Map, light: LightPreset) {
+  try {
+    if (!standardColors) {
+      // Read Standard's own colours first. They aren't available until its basemap has
+      // loaded; until then, change nothing (the map's "load" event calls this again).
+      const read: Record<string, unknown> = {};
+      for (const key of Object.keys(basemapColors("day", {}))) read[key] = m.getConfigProperty("basemap", key);
+      if (Object.values(read).some((v) => v == null)) return;
+      standardColors = read;
+    }
+    for (const [key, value] of Object.entries(basemapColors(light, standardColors))) {
+      if (value != null) m.setConfigProperty("basemap", key, value as string);
+    }
+  } catch (err) {
+    console.warn("Couldn't recolour the basemap", err);
+  }
+}
+
 /** How far to tilt the map in 3D mode (degrees). */
 const THREE_D_PITCH = 55;
 
@@ -103,6 +125,11 @@ const THREE_D_PITCH = 55;
  * layers: lines and fills go in "middle" (above roads, under 3D buildings and labels),
  * dots and names in "top". This wraps addLayer so every layer gets the right slot, and a
  * `beforeId` is only used when it points at a layer in the same slot.
+ *
+ * Standard also lights custom layers with its light preset, which made the line colours
+ * go murky at dusk and near-black at night. "Emissive strength" opts a layer out of that:
+ * lines, dots and names keep their true colours (like lit signs), while fills keep a
+ * little of the light so the map still feels like night.
  */
 function assignSlots(m: mapboxgl.Map) {
   const slots = new Map<string, string>();
@@ -112,7 +139,14 @@ function assignSlots(m: mapboxgl.Map) {
     const type = (layer as { type?: string }).type;
     const slot = type === "symbol" || type === "circle" ? "top" : "middle";
     slots.set(layer.id, slot);
-    return add({ ...layer, slot } as Layer, before && slots.get(before) === slot ? before : undefined);
+    const glow: Record<string, number> =
+      type === "line" ? { "line-emissive-strength": 1 }
+      : type === "circle" ? { "circle-emissive-strength": 1 }
+      : type === "symbol" ? { "text-emissive-strength": 1, "icon-emissive-strength": 1 }
+      : type === "fill" ? { "fill-emissive-strength": 0.6 }
+      : {};
+    const paint = { ...glow, ...((layer as { paint?: object }).paint ?? {}) };
+    return add({ ...layer, slot, paint } as Layer, before && slots.get(before) === slot ? before : undefined);
   }) as typeof m.addLayer;
 }
 
@@ -155,12 +189,16 @@ export default function App() {
     if (!m) return;
     try {
       m.setConfigProperty("basemap", "lightPreset", mapPrefs.light);
-      m.setConfigProperty("basemap", "theme", mapPrefs.basemap);
       m.setConfigProperty("basemap", "show3dObjects", mapPrefs.threeD);
+      m.setConfigProperty("basemap", "showRoadLabels", mapPrefs.streetNames);
     } catch { /* style still loading: the constructor's config covers it */ }
-    // Our layers and the panel follow the light: Brownstone by day, Signage after dark.
-    const next = themeForLight(mapPrefs.light);
-    if (next !== currentTheme) { setTheme(next); setThemeState(next); }
+    setPoisVisible(m, mapPrefs.poi);
+    setPoiKinds(m, mapPrefs.poiKinds);
+    // Our layers and the panel follow the light: Brownstone by day, Signage after dark,
+    // with per-light tweaks (see setLight). Changing the key restyles our layers.
+    setLight(mapPrefs.light);
+    setPaletteKey(mapPrefs.light);
+    applyBasemapColors(m, mapPrefs.light);
   }, [mapPrefs]);
   // Tilt for 3D, flatten for 2D.
   useEffect(() => {
@@ -170,15 +208,17 @@ export default function App() {
   }, [mapPrefs.threeD]);
 
   // ---- Palette: recolour our layers in place and swap the CSS variables ------
-  const [theme, setThemeState] = useState<ThemeName>(currentTheme);
+  /** Changes whenever the palette does, to restyle our layers */
+  const [paletteKey, setPaletteKey] = useState<string>(currentTheme);
   useEffect(() => {
     const m = map.current;
     if (!m?.getLayer("lines")) return; // first load styles itself
     restyleTransit(m);
+    restylePois(m);
     restyleAreas(m);
     restyleParks(m);
     restyleAmbient(m);
-  }, [theme]);
+  }, [paletteKey]);
 
   // ---- Decorative gray trains: how many are running (remembered) -----------
   const [ambientCount, setAmbientCount] = useState(() => {
@@ -211,6 +251,9 @@ export default function App() {
   // ---- Parks -----------------------------------------------------------------
   const [parks, setParks] = useState<Parks | null>(null);
   const [selectedParkId, setSelectedParkId] = useState<string | null>(null);
+  /** A clicked point of interest (museum, landmark, library…) */
+  const [selectedPoi, setSelectedPoiState] = useState<Poi | null>(null);
+  const [poiHover, setPoiHover] = useState<{ name: string; type: string; x: number; y: number } | null>(null);
   const [parkHover, setParkHover] = useState<{ id: string; x: number; y: number } | null>(null);
   const [visitedParks, setVisitedParks] = useState<string[]>(() => loadVisited("park"));
   const parksById = useMemo(() => new Map((parks?.features ?? []).map((f) => [f.properties.id, f as Park])), [parks]);
@@ -281,7 +324,8 @@ export default function App() {
   const selectArea = (id: string, toggle = true) => {
     if (!areasById.has(id)) return;
     setShowAreas(true);
-    setSelectedParkId(null); // one place card at a time: a neighbourhood or a park
+    setSelectedParkId(null); // one place card at a time: a neighbourhood, a park or a place
+    setSelectedPoiState(null);
     setSelectedAreaId((current) => (toggle && current === id ? null : id));
   };
   const selectAreaRef = useRef(selectArea);
@@ -291,10 +335,28 @@ export default function App() {
   const selectPark = (id: string, toggle = true) => {
     setShowParks(true);
     setSelectedAreaId(null);
+    setSelectedPoiState(null);
     setSelectedParkId((current) => (toggle && current === id ? null : id));
   };
   const selectParkRef = useRef(selectPark);
   selectParkRef.current = selectPark;
+
+  /** Select a point of interest (clicking the selected one again closes it). */
+  const selectPoi = (poi: Poi) => {
+    setSelectedAreaId(null);
+    setSelectedParkId(null);
+    setSelectedPoiState((current) => (current && current.name === poi.name && current.coords.join() === poi.coords.join() ? null : poi));
+  };
+  const selectPoiRef = useRef(selectPoi);
+  selectPoiRef.current = selectPoi;
+
+  // Ring the selected place and bring it into view.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    setSelectedPoi(m, selectedPoi?.coords ?? null);
+    if (selectedPoi) m.flyTo({ center: selectedPoi.coords, zoom: Math.max(m.getZoom(), 16), speed: STOP_FLY_SPEED, essential: true, padding: panelPadding() });
+  }, [selectedPoi]);
 
   const stationsById = useMemo(
     () => new Map((stations?.features ?? []).map((f) => [f.properties.id, f as Station])),
@@ -327,13 +389,14 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (selected) setSelected(null);
+      else if (selectedPoi) setSelectedPoiState(null);
       else if (selectedParkId) setSelectedParkId(null);
       else if (selectedAreaId) setSelectedAreaId(null);
       else if (lineFilter) setLineFilter("");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, selectedParkId, selectedAreaId, lineFilter]);
+  }, [selected, selectedPoi, selectedParkId, selectedAreaId, lineFilter]);
 
   // station id -> coordinates, for placing trains
   const coordsById = useMemo(() => {
@@ -354,11 +417,15 @@ export default function App() {
       config: {
         basemap: {
           lightPreset: prefs.light,
-          theme: prefs.basemap,
+          theme: "default",
           show3dObjects: prefs.threeD,
           // We draw our own stations and lines; Mapbox's transit labels would double them up.
           showTransitLabels: false,
+          // Standard's POIs are all-or-nothing, so ours (poi.ts) replace them, by category.
           showPointOfInterestLabels: false,
+          ...QUIET_BASEMAP,
+          showRoadLabels: prefs.streetNames,
+          // Colours are applied once the style loads (applyBasemapColors), after reading Standard's own.
         },
       },
       center: NYC,
@@ -369,6 +436,8 @@ export default function App() {
     });
     map.current = m;
     assignSlots(m);
+    m.on("style.load", () => applyBasemapColors(m, mapPrefsRef.current.light));
+    m.on("load", () => applyBasemapColors(m, mapPrefsRef.current.light));
     // The compass shows (and resets) rotation and tilt, which matter in 3D.
     m.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
@@ -381,6 +450,8 @@ export default function App() {
         setStations(stationsData);
         setRoutes(routesData);
         addLayers(m, lines, stationsData);
+        addPoiLayer(m, mapPrefsRef.current.poiKinds, "stations");
+        setPoisVisible(m, mapPrefsRef.current.poi);
         // Above station dots (so a waiting train isn't hidden), below station names.
         ambient.current = startAmbientTrains(m, lines, { count: ambientCountRef.current, laneSpacing: LANE_SPACING, beforeId: "station-labels" });
       } catch (e) {
@@ -417,7 +488,31 @@ export default function App() {
 
     // ---- Park hover + click (transit, when shown, wins) --------------------
     const overTransitForParks = (point: mapboxgl.Point) =>
-      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
+      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit", POI_LAYER].filter((l) => m.getLayer(l)) }).length > 0;
+
+    // ---- Points of interest: hover + click (a station under the cursor wins) ----
+    const poiAt = (point: mapboxgl.Point) =>
+      m.getLayer(POI_LAYER) ? m.queryRenderedFeatures(point, { layers: [POI_LAYER] })[0] : undefined;
+    const stationAt = (point: mapboxgl.Point) => m.queryRenderedFeatures(point, { layers: ["stations"] }).length > 0;
+    m.on("mousemove", POI_LAYER, (e) => {
+      const f = e.features?.[0];
+      if (!f || stationAt(e.point)) { setPoiHover(null); return; }
+      m.getCanvas().style.cursor = "pointer";
+      setPoiHover({ name: String(f.properties?.name ?? ""), type: String(f.properties?.type ?? ""), x: e.point.x, y: e.point.y });
+    });
+    m.on("mouseleave", POI_LAYER, () => { setPoiHover(null); m.getCanvas().style.cursor = ""; });
+    m.on("click", POI_LAYER, (e) => {
+      const f = e.features?.[0];
+      if (!f || stationAt(e.point) || f.geometry.type !== "Point") return;
+      const p = f.properties ?? {};
+      selectPoiRef.current({
+        name: String(p.name ?? ""),
+        type: String(p.type ?? p.category_en ?? ""),
+        class: String(p.class ?? ""),
+        maki: String(p.maki ?? ""),
+        coords: f.geometry.coordinates as [number, number],
+      });
+    });
     let hoveredPark: string | null = null;
     const setParkHoverState = (id: string | null) => {
       if (hoveredPark === id) return;
@@ -449,7 +544,7 @@ export default function App() {
 
     // ---- Neighbourhood hover + click (transit, when shown, wins) ----------
     const overTransit = (point: mapboxgl.Point) =>
-      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit"].filter((l) => m.getLayer(l)) }).length > 0;
+      m.queryRenderedFeatures(point, { layers: ["stations", "lines-hit", POI_LAYER].filter((l) => m.getLayer(l)) }).length > 0;
     let hoveredArea: string | null = null;
     const setAreaHoverState = (id: string | null) => {
       if (hoveredArea === id) return;
@@ -535,7 +630,7 @@ export default function App() {
     });
     m.on("click", "lines-hit", (e) => {
       // A click on a station sitting on the line is a station click, not a line click.
-      if (m.queryRenderedFeatures(e.point, { layers: ["stations"] }).length) return;
+      if (m.queryRenderedFeatures(e.point, { layers: ["stations"] }).length || poiAt(e.point)) return;
       const routeId = e.features?.[0]?.properties?.routeId as string | undefined;
       if (routeId) setLineFilter((current) => (current === routeId ? "" : routeId));
     });
@@ -622,7 +717,7 @@ export default function App() {
     frameBoroughs.current = false;
     const bounds = highlightBoroughs.length ? boroughBounds(areas, highlightBoroughs) : null;
     if (bounds) m.fitBounds(bounds, { padding: panelPadding(), maxZoom: 13, duration: 800 });
-  }, [highlightBoroughs, areas, theme]);
+  }, [highlightBoroughs, areas, paletteKey]);
 
   // Highlight the selected neighbourhood and frame it on the map.
   useEffect(() => {
@@ -684,6 +779,7 @@ export default function App() {
     saveVisited(next, "stop");
     setSelectedAreaId(null); // so the panel opens on the stop, not a neighbourhood or park from earlier
     setSelectedParkId(null);
+    setSelectedPoiState(null);
     selectStation(pick.properties.id, [], false);
   };
   const rollNeighborhood = (boroughs: string[]) => {
@@ -751,31 +847,6 @@ export default function App() {
             Live subway trains{areas ? ", the neighborhoods they run through" : ""}{parks ? (areas ? " and the parks in between" : " and the parks nearby") : ""}.
             Search for anything, or hit “Take me somewhere” and go somewhere new.
           </p>
-          <div className="map-style" aria-label="Map style">
-            <div className="seg" role="radiogroup" aria-label="Time of day">
-              {LIGHT_PRESETS.map((l) => (
-                <button key={l} role="radio" aria-checked={mapPrefs.light === l} className={mapPrefs.light === l ? "on" : ""} onClick={() => updateMap({ light: l })} title={LIGHT_LABELS[l]}>
-                  <span className={`light-icon ${l}`} aria-hidden="true" />
-                  <span className="seg-label">{LIGHT_LABELS[l]}</span>
-                </button>
-              ))}
-            </div>
-            <div className="seg" role="radiogroup" aria-label="Basemap">
-              {(["default", "faded"] as BasemapTheme[]).map((b) => (
-                <button key={b} role="radio" aria-checked={mapPrefs.basemap === b} className={mapPrefs.basemap === b ? "on" : ""} onClick={() => updateMap({ basemap: b })}>
-                  {b === "default" ? "Default" : "Faded"}
-                </button>
-              ))}
-            </div>
-            <button
-              className={`seg-toggle${mapPrefs.threeD ? " on" : ""}`}
-              aria-pressed={mapPrefs.threeD}
-              onClick={() => updateMap({ threeD: !mapPrefs.threeD })}
-              title={mapPrefs.threeD ? "Flatten the map (2D)" : "Tilt the map and show 3D buildings"}
-            >
-              3D
-            </button>
-          </div>
         </header>
 
         {stations && (
@@ -855,6 +926,19 @@ export default function App() {
           <span>Live trains {showTrains && trainCount ? `· ${trainCount} running` : ""}</span>
         </label>
         </>
+        )}
+
+        {selectedPoi && stations && (
+          <PoiPanel
+            poi={selectedPoi}
+            areas={(areas?.features ?? []) as Area[]}
+            stations={stations.features as Station[]}
+            routes={routes}
+            selectedStationId={selected?.properties.id}
+            onSelectArea={(id) => selectArea(id, false)}
+            onSelectStation={(id) => { setShowTransit(true); selectStation(id); }}
+            onClose={() => setSelectedPoiState(null)}
+          />
         )}
 
         {selectedPark && (
@@ -1005,7 +1089,16 @@ export default function App() {
         );
       })()}
 
-      {parkHover && !hover && parksById.get(parkHover.id) && (() => {
+      {poiHover && (
+        <div className={`line-card poi-hover${poiHover.x > window.innerWidth - 300 ? " flip" : ""}`} style={{ left: poiHover.x, top: poiHover.y }}>
+          <div>
+            <strong>{poiHover.name}</strong>
+            <span>{poiHover.type || "Place"}{selectedPoi?.name === poiHover.name ? " · Click to close" : ""}</span>
+          </div>
+        </div>
+      )}
+
+      {parkHover && !hover && !poiHover && parksById.get(parkHover.id) && (() => {
         const p = parksById.get(parkHover.id)!.properties;
         const flip = parkHover.x > window.innerWidth - 300;
         return (
@@ -1050,35 +1143,25 @@ export default function App() {
         onAreas={setShowAreas}
         onBoroughs={setShowBoroughs}
         onParks={setShowParks}
+        places={mapPrefs.poi}
+        onPlaces={(poi) => updateMap({ poi })}
       />
 
-      {(() => {
-        // Labels that say what each press will do, or why it can't.
-        const fewer = Math.max(0, ambientCount - AMBIENT_STEP);
-        const more = Math.min(AMBIENT_MAX, ambientCount + AMBIENT_STEP);
-        const off = !showTransit;
-        const minusTitle = off ? "Turn on Transit to see the trains"
-          : ambientCount === 0 ? "No trains running"
-          : fewer === 0 ? "Stop all the trains" : `Remove ${ambientCount - fewer} trains (down to ${fewer})`;
-        const plusTitle = off ? "Turn on Transit to see the trains"
-          : ambientCount >= AMBIENT_MAX ? `That's the most (${AMBIENT_MAX})`
-          : `Add ${more - ambientCount} trains (up to ${more})`;
-        const label = ambientCount === 0 ? "No trains" : `${ambientCount} ${ambientCount === 1 ? "train" : "trains"}`;
-        return (
-          <div className={`ambient-control${off ? " off" : ""}`} role="group" aria-label="Decorative trains">
-            <button onClick={() => setAmbientCount(fewer)} disabled={off || ambientCount <= 0} aria-label={minusTitle} title={minusTitle}>−</button>
-            <span
-              aria-live="polite"
-              title="Decorative trains that drift along the lines for atmosphere. They aren't live: the real-time MTA trains are separate."
-            >
-              <span className="ambient-dot" aria-hidden="true" />
-              {label}
-              {ambientCount >= AMBIENT_MAX && <small>max</small>}
-            </span>
-            <button onClick={() => setAmbientCount(more)} disabled={off || ambientCount >= AMBIENT_MAX} aria-label={plusTitle} title={plusTitle}>+</button>
-          </div>
-        );
-      })()}
+      <MapSettings
+        light={mapPrefs.light}
+        onLight={(light) => updateMap({ light })}
+        threeD={mapPrefs.threeD}
+        onThreeD={(threeD) => updateMap({ threeD })}
+        streetNames={mapPrefs.streetNames}
+        onStreetNames={(streetNames) => updateMap({ streetNames })}
+        poiKinds={mapPrefs.poiKinds}
+        onPoiKinds={(poiKinds) => updateMap({ poiKinds })}
+        trains={ambientCount}
+        trainsMax={AMBIENT_MAX}
+        trainsStep={AMBIENT_STEP}
+        trainsOff={!showTransit}
+        onTrains={setAmbientCount}
+      />
 
       <RandomPicker
         onPick={takeMeSomewhere}
@@ -1210,7 +1293,7 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
   m.addSource("trains", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   m.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 
-  // Lines go in the "middle" slot (see useSlots), under the basemap's labels.
+  // Lines go in the "middle" slot (see assignSlots), under the basemap's labels.
   const beforeLabels = undefined;
 
   // A paper-coloured outline under the lines, so even pale lines (N/Q/R/W, G, shuttles)
