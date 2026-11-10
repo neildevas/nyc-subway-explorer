@@ -12,6 +12,27 @@ import type mapboxgl from "mapbox-gl";
 
 export const BASEMAP_STYLE = "mapbox://styles/mapbox/light-v11";
 
+// ---- Map settings (remembered) --------------------------------------------------
+export type PoiKindName = "arts" | "landmarks" | "religion" | "learning";
+const POI_KIND_NAMES: PoiKindName[] = ["arts", "landmarks", "religion", "learning"];
+export interface MapPrefs { theme: "brownstone" | "signage"; poi: boolean; poiKinds: PoiKindName[]; streetNames: boolean }
+const MAP_KEY = "standclear.map";
+export function loadMapPrefs(): MapPrefs {
+  const fallback: MapPrefs = { theme: "brownstone", poi: true, poiKinds: [...POI_KIND_NAMES], streetNames: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem(MAP_KEY) ?? "{}");
+    return {
+      theme: saved.theme === "signage" ? "signage" : "brownstone",
+      poi: typeof saved.poi === "boolean" ? saved.poi : fallback.poi,
+      poiKinds: Array.isArray(saved.poiKinds) ? saved.poiKinds.filter((k: string) => POI_KIND_NAMES.includes(k as PoiKindName)) : fallback.poiKinds,
+      streetNames: typeof saved.streetNames === "boolean" ? saved.streetNames : fallback.streetNames,
+    };
+  } catch { return fallback; }
+}
+export function saveMapPrefs(p: MapPrefs) {
+  try { localStorage.setItem(MAP_KEY, JSON.stringify(p)); } catch { /* storage unavailable */ }
+}
+
 export interface Colors {
   /** Page background behind the map while it loads */
   page: string;
@@ -55,7 +76,7 @@ export interface Colors {
 
 export const THEMES = {
   brownstone: {
-    label: "Brownstone",
+    label: "Day",
     colors: {
       page: "#f2e9da",
       land: "#f5eee2", // limestone and parchment
@@ -87,23 +108,25 @@ export const THEMES = {
     },
   },
   signage: {
-    label: "Signage",
+    label: "Night",
     colors: {
-      page: "#000000",
-      land: "#0b0b0b",
-      water: "#1b2228",
-      waterLabel: "#7d8b96",
-      park: "#122016",
-      building: "#161616",
-      buildingEdge: "#222222",
-      road: "#2b2b2b",
-      roadCasing: "#000000",
-      roadMinor: "#1c1c1c",
-      boundary: "#3a3a3a",
+      // A city at night rather than pure black: deep navy land, darker water, streets
+      // as slightly lighter blue-gray lanes (like Standard's night light).
+      page: "#141826",
+      land: "#1b2030",
+      water: "#111827",
+      waterLabel: "#7d90b0",
+      park: "#1c2b2a",
+      building: "#23293b",
+      buildingEdge: "#2b3245",
+      road: "#2e3549",
+      roadCasing: "#1b2030",
+      roadMinor: "#262c3f",
+      boundary: "#3f4763",
       ink: "#ffffff",
-      inkSoft: "#d0d0d0",
-      inkFaint: "#9a9a9a",
-      halo: "#000000",
+      inkSoft: "#c9cee0",
+      inkFaint: "#8f96b0",
+      halo: "#121625",
       select: "#FCCC0A", // N/Q/R/W yellow
       selectInk: "#ffffff",
       stationFill: "#ffffff",
@@ -111,8 +134,8 @@ export const THEMES = {
       ambient: "#A7A9AC", // shuttle gray
       parkGreen: "#00933C", // 4/5/6 green
       parkLabel: "#6CBE45", // G green
-      areaLine: "#3d3d3d",
-      subLine: "#333333",
+      areaLine: "#5a6282",
+      subLine: "#454d6a",
       areaFill: [0.12, 0.28],
       // A/C/E blue, B/D/F/M orange, 4/5/6 green, 7 purple, N/Q/R/W yellow
       areaPalette: ["#0062CF", "#FF6319", "#00933C", "#B933AD", "#FCCC0A"],
@@ -123,35 +146,29 @@ export const THEMES = {
 
 export type ThemeName = keyof typeof THEMES;
 export const THEME_NAMES = Object.keys(THEMES) as ThemeName[];
-const THEME_KEY = "standclear.theme";
-
-function loadTheme(): ThemeName {
-  try {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved && saved in THEMES) return saved as ThemeName;
-  } catch { /* storage unavailable */ }
-  return "brownstone";
-}
 
 /** The current theme's colours (updated in place by setTheme). */
 export const T: Colors = { ...THEMES.brownstone.colors };
 export let currentTheme: ThemeName = "brownstone";
 
-/** Switch theme: updates `T`, the page's `data-theme`, and remembers the choice. Restyle the map after. */
+/** Switch palette: updates `T` and the page's `data-theme`. Restyle the map's layers after. */
 export function setTheme(name: ThemeName) {
   currentTheme = name;
   Object.assign(T, THEMES[name].colors);
   document.documentElement.dataset.theme = name;
-  try { localStorage.setItem(THEME_KEY, name); } catch { /* storage unavailable */ }
 }
+
 // Apply the saved theme straight away, before the map or any CSS paints.
-setTheme(loadTheme());
+setTheme(loadMapPrefs().theme);
 
 const set = (m: mapboxgl.Map, id: string, prop: string, value: unknown) => {
   try { m.setPaintProperty(id, prop as never, value as never); } catch { /* not this layer's property */ }
 };
 
-/** Recolour the basemap's layers warm. Safe to call on any classic Mapbox style. */
+/** Mapbox Streets land-use classes that are green space. */
+const GREEN_CLASSES = ["park", "pitch", "grass", "wood", "scrub", "cemetery", "golf_course", "garden", "playground", "agriculture"];
+
+/** Recolour the basemap's layers in the current theme. Safe to call on any classic Mapbox style. */
 export function applyBasemapTheme(m: mapboxgl.Map) {
   for (const layer of m.getStyle()?.layers ?? []) {
     const { id, type } = layer;
@@ -160,7 +177,12 @@ export function applyBasemapTheme(m: mapboxgl.Map) {
       if (/water/.test(id)) set(m, id, "fill-color", T.water);
       else if (/park|national|landcover|grass|wood|pitch|cemetery/.test(id)) set(m, id, "fill-color", T.park);
       else if (/building/.test(id)) { set(m, id, "fill-color", T.building); set(m, id, "fill-outline-color", T.buildingEdge); }
-      else if (/^land$|landuse|land-structure|aeroway/.test(id)) set(m, id, "fill-color", T.land);
+      else if (/landuse/.test(id)) {
+        // Land use is coloured by class: green spaces get the park colour, everything else
+        // (schools, hospitals, commercial…) blends into the land so it stays quiet.
+        set(m, id, "fill-color", ["match", ["get", "class"], GREEN_CLASSES, T.park, T.land]);
+      }
+      else if (/^land$|land-structure|aeroway/.test(id)) set(m, id, "fill-color", T.land);
     } else if (type === "line") {
       if (/water/.test(id)) set(m, id, "line-color", T.water);
       else if (/admin|boundary/.test(id)) set(m, id, "line-color", T.boundary);
@@ -172,5 +194,15 @@ export function applyBasemapTheme(m: mapboxgl.Map) {
       set(m, id, "text-color", water ? T.waterLabel : /road|street/.test(id) ? T.inkFaint : T.inkSoft);
       set(m, id, "text-halo-color", T.halo);
     }
+  }
+}
+
+/** Basemap street names and road shields: the light style's road label layers. */
+const isStreetLabel = (l: { id: string; type: string }) => l.type === "symbol" && /^(road|street|bridge|tunnel)[-_]|shield/.test(l.id);
+
+/** Show or hide the basemap's street names. */
+export function setStreetNames(m: mapboxgl.Map, on: boolean) {
+  for (const layer of m.getStyle()?.layers ?? []) {
+    if (isStreetLabel(layer)) m.setLayoutProperty(layer.id, "visibility", on ? "visible" : "none");
   }
 }
