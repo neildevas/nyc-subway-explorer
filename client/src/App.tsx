@@ -12,7 +12,7 @@ import { addPoiLayer, POI_LAYER, restylePois, setPoiKinds, setPoisVisible, setSe
 import { type Poi, PoiPanel } from "./PoiPanel";
 import { AreaPanel } from "./AreaPanel";
 import { ParkPanel } from "./ParkPanel";
-import { BASEMAP_STYLE, basemapColors, currentTheme, type LightPreset, QUIET_BASEMAP, loadMapPrefs, saveMapPrefs, setLight, T } from "./theme";
+import { applyBasemapTheme, BASEMAP_STYLE, currentTheme, loadMapPrefs, saveMapPrefs, setStreetNames, setTheme, T } from "./theme";
 import { addParkLayers, DESTINATION_TYPES, PARK_GROUPS, parkBounds, parkGroupOf, restyleParks, setParksVisible, setParkTypeFilter, setSelectedPark, typesForGroups } from "./parks";
 import { PlaceSearch, type PlacePick } from "./PlaceSearch";
 import { addAreaLayers, areaBounds, boroughBounds, restyleAreas, SUB_ZOOM, setAreasVisible, setBoroughHighlight, setBoroughHover, setSelectedArea } from "./areas";
@@ -64,10 +64,8 @@ const lineOffset = [
 
 /** Every map layer that belongs to the Transit toggle. */
 /** Decorative gray trains: default, step and limit for the + / − buttons */
-const AMBIENT_KEY = "standclear.ambientTrains";
-const AMBIENT_DEFAULT = 15;
-const AMBIENT_STEP = 5;
-const AMBIENT_MAX = 60;
+/** How many decorative gray trains drift around the map */
+const AMBIENT_COUNT = 30;
 
 const TRANSIT_LAYERS = ["lines-casing", "lines", "lines-hit", "stations", "station-labels", "trains", "train-labels", "ambient-trains", "selected"];
 
@@ -95,60 +93,8 @@ const panelPadding = () =>
     ? { top: 70, right: 30, left: 30, bottom: window.innerHeight * 0.55 + 20 }
     : { top: 70, right: 60, bottom: 90, left: 400 };
 
-/** Standard's own colour settings, read before we change any, so other times of day can go back to them. */
-let standardColors: Record<string, unknown> | null = null;
-
-/** Quiet the basemap for this time of day (see basemapColors). */
-function applyBasemapColors(m: mapboxgl.Map, light: LightPreset) {
-  try {
-    if (!standardColors) {
-      // Read Standard's own colours first. They aren't available until its basemap has
-      // loaded; until then, change nothing (the map's "load" event calls this again).
-      const read: Record<string, unknown> = {};
-      for (const key of Object.keys(basemapColors("day", {}))) read[key] = m.getConfigProperty("basemap", key);
-      if (Object.values(read).some((v) => v == null)) return;
-      standardColors = read;
-    }
-    for (const [key, value] of Object.entries(basemapColors(light, standardColors))) {
-      if (value != null) m.setConfigProperty("basemap", key, value as string);
-    }
-  } catch (err) {
-    console.warn("Couldn't recolour the basemap", err);
-  }
-}
-
-/** How far to tilt the map in 3D mode (degrees). */
-const THREE_D_PITCH = 55;
-
-/**
- * Mapbox Standard places custom layers in "slots" rather than under named basemap
- * layers: lines and fills go in "middle" (above roads, under 3D buildings and labels),
- * dots and names in "top". This wraps addLayer so every layer gets the right slot, and a
- * `beforeId` is only used when it points at a layer in the same slot.
- *
- * Standard also lights custom layers with its light preset, which made the line colours
- * go murky at dusk and near-black at night. "Emissive strength" opts a layer out of that:
- * lines, dots and names keep their true colours (like lit signs), while fills keep a
- * little of the light so the map still feels like night.
- */
-function assignSlots(m: mapboxgl.Map) {
-  const slots = new Map<string, string>();
-  const add = m.addLayer.bind(m);
-  type Layer = Parameters<typeof m.addLayer>[0];
-  m.addLayer = ((layer: Layer, before?: string) => {
-    const type = (layer as { type?: string }).type;
-    const slot = type === "symbol" || type === "circle" ? "top" : "middle";
-    slots.set(layer.id, slot);
-    const glow: Record<string, number> =
-      type === "line" ? { "line-emissive-strength": 1 }
-      : type === "circle" ? { "circle-emissive-strength": 1 }
-      : type === "symbol" ? { "text-emissive-strength": 1, "icon-emissive-strength": 1 }
-      : type === "fill" ? { "fill-emissive-strength": 0.6 }
-      : {};
-    const paint = { ...glow, ...((layer as { paint?: object }).paint ?? {}) };
-    return add({ ...layer, slot, paint } as Layer, before && slots.get(before) === slot ? before : undefined);
-  }) as typeof m.addLayer;
-}
+/** The basemap's first text layer; our lines go under it so place names stay on top. */
+const firstLabelLayer = (m: mapboxgl.Map) => m.getStyle()?.layers?.find((l) => l.type === "symbol")?.id;
 
 /** Express variants (6X, 7X, FX) count as their base route. */
 const baseRoute = (r: string, routes: Routes) => (/^[0-9A-Z]X$/.test(r) && routes[r[0]] ? r[0] : r);
@@ -178,7 +124,7 @@ export default function App() {
   // Map layers: Transit and Neighborhoods, toggled independently.
   const [showTransit, setShowTransit] = useState(() => loadLayerPrefs().transit);
 
-  // ---- Basemap: Mapbox Standard's light, theme and 3D (remembered) ---------
+  // ---- Map settings: theme, street names, places (remembered) --------------
   const [mapPrefs, setMapPrefs] = useState(loadMapPrefs);
   const mapPrefsRef = useRef(mapPrefs);
   mapPrefsRef.current = mapPrefs;
@@ -187,25 +133,15 @@ export default function App() {
     saveMapPrefs(mapPrefs);
     const m = map.current;
     if (!m) return;
-    try {
-      m.setConfigProperty("basemap", "lightPreset", mapPrefs.light);
-      m.setConfigProperty("basemap", "show3dObjects", mapPrefs.threeD);
-      m.setConfigProperty("basemap", "showRoadLabels", mapPrefs.streetNames);
-    } catch { /* style still loading: the constructor's config covers it */ }
+    if (m.isStyleLoaded()) setStreetNames(m, mapPrefs.streetNames);
     setPoisVisible(m, mapPrefs.poi);
     setPoiKinds(m, mapPrefs.poiKinds);
-    // Our layers and the panel follow the light: Brownstone by day, Signage after dark,
-    // with per-light tweaks (see setLight). Changing the key restyles our layers.
-    setLight(mapPrefs.light);
-    setPaletteKey(mapPrefs.light);
-    applyBasemapColors(m, mapPrefs.light);
+    // Changing the theme recolours the basemap and our layers (no reload).
+    if (mapPrefs.theme !== currentTheme) {
+      setTheme(mapPrefs.theme);
+      setPaletteKey(mapPrefs.theme);
+    }
   }, [mapPrefs]);
-  // Tilt for 3D, flatten for 2D.
-  useEffect(() => {
-    const m = map.current;
-    if (!m) return;
-    m.easeTo({ pitch: mapPrefs.threeD ? THREE_D_PITCH : 0, duration: 800 });
-  }, [mapPrefs.threeD]);
 
   // ---- Palette: recolour our layers in place and swap the CSS variables ------
   /** Changes whenever the palette does, to restyle our layers */
@@ -213,6 +149,7 @@ export default function App() {
   useEffect(() => {
     const m = map.current;
     if (!m?.getLayer("lines")) return; // first load styles itself
+    applyBasemapTheme(m);
     restyleTransit(m);
     restylePois(m);
     restyleAreas(m);
@@ -220,20 +157,8 @@ export default function App() {
     restyleAmbient(m);
   }, [paletteKey]);
 
-  // ---- Decorative gray trains: how many are running (remembered) -----------
-  const [ambientCount, setAmbientCount] = useState(() => {
-    try {
-      const n = Number(localStorage.getItem(AMBIENT_KEY));
-      return localStorage.getItem(AMBIENT_KEY) !== null && Number.isFinite(n) ? Math.min(AMBIENT_MAX, Math.max(0, n)) : AMBIENT_DEFAULT;
-    } catch { return AMBIENT_DEFAULT; }
-  });
+  // ---- Decorative gray trains ----------------------------------------------
   const ambient = useRef<AmbientTrains | null>(null);
-  const ambientCountRef = useRef(ambientCount);
-  ambientCountRef.current = ambientCount;
-  useEffect(() => {
-    ambient.current?.setCount(ambientCount);
-    try { localStorage.setItem(AMBIENT_KEY, String(ambientCount)); } catch { /* storage unavailable */ }
-  }, [ambientCount]);
   const [showAreas, setShowAreas] = useState(() => loadLayerPrefs().areas);
   const [showBoroughs, setShowBoroughs] = useState(() => loadLayerPrefs().boroughs);
   const [showParks, setShowParks] = useState(() => loadLayerPrefs().parks);
@@ -410,38 +335,20 @@ export default function App() {
     if (!mapEl.current || map.current) return;
     if (!mapboxgl.accessToken) { setError("Add VITE_MAPBOX_TOKEN to client/.env.local"); return; }
 
-    const prefs = mapPrefsRef.current;
     const m = new mapboxgl.Map({
       container: mapEl.current,
       style: BASEMAP_STYLE,
-      config: {
-        basemap: {
-          lightPreset: prefs.light,
-          theme: "default",
-          show3dObjects: prefs.threeD,
-          // We draw our own stations and lines; Mapbox's transit labels would double them up.
-          showTransitLabels: false,
-          // Standard's POIs are all-or-nothing, so ours (poi.ts) replace them, by category.
-          showPointOfInterestLabels: false,
-          ...QUIET_BASEMAP,
-          showRoadLabels: prefs.streetNames,
-          // Colours are applied once the style loads (applyBasemapColors), after reading Standard's own.
-        },
-      },
       center: NYC,
       zoom: 10.6,
-      pitch: prefs.threeD ? THREE_D_PITCH : 0,
       minZoom: 9,
       maxBounds: [[-74.6, 40.35], [-73.4, 41.1]],
     });
     map.current = m;
-    assignSlots(m);
-    m.on("style.load", () => applyBasemapColors(m, mapPrefsRef.current.light));
-    m.on("load", () => applyBasemapColors(m, mapPrefsRef.current.light));
-    // The compass shows (and resets) rotation and tilt, which matter in 3D.
-    m.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
+    m.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
 
     m.on("load", async () => {
+      applyBasemapTheme(m);
+      setStreetNames(m, mapPrefsRef.current.streetNames);
       try {
         const [lines, stationsData, routesData] = await fetchStatic();
         if (lines.features.length && typeof lines.features[0].properties?.slot !== "number") {
@@ -453,7 +360,7 @@ export default function App() {
         addPoiLayer(m, mapPrefsRef.current.poiKinds, "stations");
         setPoisVisible(m, mapPrefsRef.current.poi);
         // Above station dots (so a waiting train isn't hidden), below station names.
-        ambient.current = startAmbientTrains(m, lines, { count: ambientCountRef.current, laneSpacing: LANE_SPACING, beforeId: "station-labels" });
+        ambient.current = startAmbientTrains(m, lines, { count: AMBIENT_COUNT, laneSpacing: LANE_SPACING, beforeId: "station-labels" });
       } catch (e) {
         setError((e as Error).message);
         return;
@@ -1148,19 +1055,12 @@ export default function App() {
       />
 
       <MapSettings
-        light={mapPrefs.light}
-        onLight={(light) => updateMap({ light })}
-        threeD={mapPrefs.threeD}
-        onThreeD={(threeD) => updateMap({ threeD })}
+        theme={mapPrefs.theme}
+        onTheme={(theme) => updateMap({ theme })}
         streetNames={mapPrefs.streetNames}
         onStreetNames={(streetNames) => updateMap({ streetNames })}
         poiKinds={mapPrefs.poiKinds}
         onPoiKinds={(poiKinds) => updateMap({ poiKinds })}
-        trains={ambientCount}
-        trainsMax={AMBIENT_MAX}
-        trainsStep={AMBIENT_STEP}
-        trainsOff={!showTransit}
-        onTrains={setAmbientCount}
       />
 
       <RandomPicker
@@ -1293,8 +1193,9 @@ function addLayers(m: mapboxgl.Map, lines: Lines, stations: Stations) {
   m.addSource("trains", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   m.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
 
-  // Lines go in the "middle" slot (see assignSlots), under the basemap's labels.
-  const beforeLabels = undefined;
+  // Put the subway lines under the basemap's first text layer, so neighbourhood,
+  // borough and street names stay readable on top of them.
+  const beforeLabels = firstLabelLayer(m);
 
   // A paper-coloured outline under the lines, so even pale lines (N/Q/R/W, G, shuttles)
   // stand out from the cream basemap.

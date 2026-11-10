@@ -1,32 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { POI_KINDS, type PoiKind } from "./poi";
-import { LIGHT_PRESETS, type LightPreset } from "./theme";
-
-const LIGHT_LABELS: Record<LightPreset, string> = { dawn: "Dawn", day: "Day", dusk: "Dusk", night: "Night" };
+import { THEME_NAMES, THEMES, type ThemeName } from "./theme";
 
 /**
- * A gear button under the layer toggles that opens the map's settings: time of day,
- * 3D buildings, which kinds of places to show, and how many decorative trains are running. Closes on a click outside
- * or Esc.
+ * A gear button under the layer toggles that opens the map's settings: the style
+ * (day or night), street names, and which kinds of places to show. Closes on a click
+ * outside or Esc.
  */
-export function MapSettings({ light, onLight, threeD, onThreeD, streetNames, onStreetNames, poiKinds, onPoiKinds, trains, trainsMax, trainsStep, trainsOff, onTrains }: {
-  light: LightPreset;
-  onLight: (l: LightPreset) => void;
-  threeD: boolean;
-  onThreeD: (on: boolean) => void;
+export function MapSettings({ theme, onTheme, streetNames, onStreetNames, poiKinds, onPoiKinds }: {
+  theme: ThemeName;
+  onTheme: (t: ThemeName) => void;
   /** Mapbox's street names */
   streetNames: boolean;
   onStreetNames: (on: boolean) => void;
   /** Which kinds of places the Places layer shows */
   poiKinds: PoiKind[];
   onPoiKinds: (kinds: PoiKind[]) => void;
-  /** Decorative trains running now */
-  trains: number;
-  trainsMax: number;
-  trainsStep: number;
-  /** True when Transit is off, so the trains are hidden anyway */
-  trainsOff: boolean;
-  onTrains: (n: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -47,16 +36,6 @@ export function MapSettings({ light, onLight, threeD, onThreeD, streetNames, onS
     };
   }, [open]);
 
-  // Labels that say what each press will do, or why it can't.
-  const fewer = Math.max(0, trains - trainsStep);
-  const more = Math.min(trainsMax, trains + trainsStep);
-  const minusTitle = trainsOff ? "Turn on Transit to see the trains"
-    : trains === 0 ? "No trains running"
-    : fewer === 0 ? "Stop all the trains" : `Remove ${trains - fewer} trains (down to ${fewer})`;
-  const plusTitle = trainsOff ? "Turn on Transit to see the trains"
-    : trains >= trainsMax ? `That's the most (${trainsMax})`
-    : `Add ${more - trains} trains (up to ${more})`;
-  const trainLabel = trains === 0 ? "No trains" : `${trains} ${trains === 1 ? "train" : "trains"}`;
 
   return (
     <div className="map-settings" ref={root}>
@@ -78,31 +57,15 @@ export function MapSettings({ light, onLight, threeD, onThreeD, streetNames, onS
       {open && (
         <div className="settings-card" role="dialog" aria-label="Map settings">
           <section>
-            <h4>Time of day</h4>
-            <div className="seg" role="radiogroup" aria-label="Time of day">
-              {LIGHT_PRESETS.map((l) => (
-                <button key={l} role="radio" aria-checked={light === l} className={light === l ? "on" : ""} onClick={() => onLight(l)}>
-                  <span className={`light-icon ${l}`} aria-hidden="true" />
-                  {LIGHT_LABELS[l]}
+            <h4>Style</h4>
+            <div className="seg" role="radiogroup" aria-label="Map style">
+              {THEME_NAMES.map((name) => (
+                <button key={name} role="radio" aria-checked={theme === name} className={theme === name ? "on" : ""} onClick={() => onTheme(name)}>
+                  <span className={`theme-swatch ${name}`} aria-hidden="true" />
+                  {THEMES[name].label}
                 </button>
               ))}
             </div>
-          </section>
-
-          <section className="settings-row">
-            <div>
-              <h4>3D buildings</h4>
-              <p className="muted">Tilt the map. Right-drag (or Ctrl-drag) to rotate.</p>
-            </div>
-            <button
-              className={`switch${threeD ? " on" : ""}`}
-              role="switch"
-              aria-checked={threeD}
-              onClick={() => onThreeD(!threeD)}
-              aria-label="3D buildings"
-            >
-              <span />
-            </button>
           </section>
 
           <section className="settings-row">
@@ -136,21 +99,6 @@ export function MapSettings({ light, onLight, threeD, onThreeD, streetNames, onS
             </div>
           </section>
 
-          <section className="settings-row">
-            <div>
-              <h4>Ambient trains</h4>
-              <p className="muted">Decorative, not live data.</p>
-            </div>
-            <div className={`ambient-control${trainsOff ? " off" : ""}`} role="group" aria-label="Decorative trains">
-              <button onClick={() => onTrains(fewer)} disabled={trainsOff || trains <= 0} aria-label={minusTitle} title={minusTitle}>−</button>
-              <span aria-live="polite">
-                <span className="ambient-dot" aria-hidden="true" />
-                {trainLabel}
-                {trains >= trainsMax && <small>max</small>}
-              </span>
-              <button onClick={() => onTrains(more)} disabled={trainsOff || trains >= trainsMax} aria-label={plusTitle} title={plusTitle}>+</button>
-            </div>
-          </section>
         </div>
       )}
     </div>
